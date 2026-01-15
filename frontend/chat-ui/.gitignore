@@ -1,0 +1,14 @@
+# Python
+.venv/
+backend/__pycache__/
+*.pyc
+
+# Secrets
+.env
+firebase-admin.json
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
