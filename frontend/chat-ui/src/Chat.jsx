@@ -41,7 +41,7 @@ export default function Chat() {
         onChange={(e) => setInput(e.target.value)}
         placeholder="Ask Ehan AI..."
       />
-      <button onClick={sendMessage}>Send</button>
+      <button onClick={sendMessage}>Send msg-</button>
     </div>
   );
 }
