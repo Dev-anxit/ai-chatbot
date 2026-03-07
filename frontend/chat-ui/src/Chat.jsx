@@ -6,7 +6,7 @@ import NeuralBackground from "./NeuralBackground";
 import "./App.css";
 
 const STORAGE_KEY = "ehan_ai_messages";
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 function formatTime(date) {
   return date?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
