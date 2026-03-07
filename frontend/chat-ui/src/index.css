@@ -11,14 +11,12 @@ html, body, #root {
 }
 
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
   color-scheme: dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #0d0d0d;
-
+  background-color: #050510;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -30,5 +28,45 @@ body {
   padding: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #0d0d0d;
+  background: #050510;
+}
+
+/* Loading screen */
+.app-loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #050510;
+}
+
+.app-loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.app-loading-logo {
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, #00c6ff, #7c3aed);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: loadingPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 28px rgba(0, 212, 255, 0.3);
+}
+
+@keyframes loadingPulse {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(0.88); opacity: 0.65; }
+}
+
+.app-loading p {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.5px;
 }

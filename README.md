@@ -1,152 +1,172 @@
-# AI Chatbot
+# Ehan AI — Full-Stack AI Chatbot
 
-A full-stack AI chatbot application with a Python backend and React frontend.
+A professional AI chatbot with a streaming FastAPI backend and a React frontend featuring real-time token-by-token responses, syntax-highlighted code blocks, and a neural network animated background.
+
+**Live Demo:**
+- Frontend: [ehan-ai.vercel.app](https://ehan-ai.vercel.app) *(deploy to update)*
+- Backend API: [ehan-ai-backend.onrender.com](https://ehan-ai-backend.onrender.com) *(deploy to update)*
+
+---
+
+## Features
+
+- **Streaming responses** — tokens appear in real time via SSE (Server-Sent Events)
+- **Stop generation** — cancel a response mid-stream
+- **Markdown rendering** — bold, lists, tables, blockquotes, inline code
+- **Syntax-highlighted code blocks** — with per-block copy button
+- **Per-message actions** — copy and regenerate buttons
+- **Scroll-to-bottom** — floating button when scrolled up
+- **Chat history** — persisted in `localStorage`
+- **Response caching** — identical questions return instantly
+- **Neural network background** — animated canvas particles
+- **Keyboard shortcuts** — `⌘K` to focus input, `Enter` to send, `Shift+Enter` for newline
+- **Mobile responsive**
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Vite, react-markdown, react-syntax-highlighter |
+| Backend | Python 3.11, FastAPI, Uvicorn |
+| AI Provider | Anthropic Claude (primary) · PollinationsAI via g4f (fallback) |
+| Deployment | Vercel (frontend) · Render (backend) |
+
+---
 
 ## Project Structure
 
 ```
 ai-chatbot/
-├── backend/                 # Python Flask/FastAPI backend
-│   ├── main.py             # Main application entry point
+├── backend/
+│   ├── main.py              # FastAPI app — /chat/stream SSE endpoint
 │   ├── requirements.txt     # Python dependencies
-│   ├── start.sh           # Backend startup script
-│   └── __pycache__/       # Python cache directory
+│   ├── start.sh             # Local start script
+│   └── .env.example         # → copy to .env and fill in keys
 │
-└── frontend/              # React frontend application
-    └── chat-ui/           # Main chat UI application
-        ├── src/           # Source code
-        │   ├── App.jsx    # Main App component
-        │   ├── Chat.jsx   # Chat component
-        │   ├── Login.jsx  # Login component
-        │   ├── firebase.js # Firebase configuration
-        │   ├── main.jsx   # Entry point
-        │   ├── App.css    # App styles
-        │   ├── login.css  # Login styles
-        │   ├── index.css  # Global styles
-        │   └── assets/    # Static assets
-        │
-        ├── public/        # Public assets
-        ├── package.json   # Node dependencies
-        ├── vite.config.js # Vite configuration
-        ├── eslint.config.js # ESLint configuration
-        ├── index.html     # HTML template
-        └── README.md      # Frontend readme
+├── frontend/chat-ui/
+│   ├── src/
+│   │   ├── Chat.jsx         # Main chat component (streaming, actions, UI)
+│   │   ├── NeuralBackground.jsx  # Canvas neural animation
+│   │   ├── App.jsx          # Root component
+│   │   ├── App.css          # All styles — glass-morphism, animations
+│   │   └── index.css        # Global resets & fonts
+│   ├── vercel.json          # Vercel SPA routing config
+│   └── .env.example         # → copy to .env.local and fill in
+│
+└── render.yaml              # Render.com backend deployment config
 ```
 
-## Prerequisites
+---
 
-- **Python 3.8+** (for backend)
-- **Node.js 14+** (for frontend)
-- **npm or yarn** (package managers)
+## Local Development
 
-## Installation
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
 
-### Backend Setup
+### 1. Backend
 
-1. Navigate to the backend directory:
 ```bash
 cd backend
-```
-
-2. Install Python dependencies:
-```bash
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Frontend Setup
-
-1. Navigate to the frontend directory:
-```bash
-cd frontend/chat-ui
+Copy `.env.example` → `.env` and add your key:
+```
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-2. Install Node dependencies:
+Start the server:
 ```bash
+uvicorn main:app --reload --port 8000
+```
+
+API runs at `http://localhost:8000`
+
+### 2. Frontend
+
+```bash
+cd frontend/chat-ui
 npm install
 ```
 
-## Running the Application
+Copy `.env.example` → `.env.local` (leave `VITE_API_BASE` empty for localhost).
 
-### Start the Backend
-
-1. From the backend directory:
-```bash
-./start.sh
-```
-
-Or run directly with Python:
-```bash
-python main.py
-```
-
-The backend will typically run on `http://localhost:5000` or `http://localhost:8000` (depending on your configuration).
-
-### Start the Frontend
-
-1. From the `frontend/chat-ui` directory:
 ```bash
 npm run dev
 ```
 
-The frontend will run on `http://localhost:5173` (Vite default).
+Frontend runs at `http://localhost:5173` (or next available port).
 
-## Technologies Used
+---
 
-### Backend
-- Python
-- Flask or FastAPI (based on main.py)
+## Deployment
 
-### Frontend
-- React (JSX)
-- Vite (Build tool)
-- Firebase (Authentication)
-- CSS
+### Backend → Render
 
-## Features
+1. Go to [render.com](https://render.com) → **New Web Service**
+2. Connect this GitHub repo
+3. Render auto-detects `render.yaml` — just add the `ANTHROPIC_API_KEY` environment variable in the Render dashboard
+4. Deploy — your backend URL will be `https://ehan-ai-backend.onrender.com`
 
-- Real-time chat interface
-- User authentication via Firebase
-- AI-powered responses from backend
-- Responsive design
+### Frontend → Vercel
 
-## Development
+1. Go to [vercel.com](https://vercel.com) → **New Project**
+2. Import this GitHub repo
+3. Set **Root Directory** to `frontend/chat-ui`
+4. Add environment variable: `VITE_API_BASE` = your Render backend URL
+5. Deploy
 
-### Frontend Development
-- ESLint is configured for code quality
-- Vite provides fast hot module replacement (HMR)
-- React components structure: App → Chat, Login
+---
 
-### Backend Development
-- Python backend handles AI chatbot logic
-- API endpoints serve chat requests
-- Integration with frontend via REST/WebSocket
+## API Reference
 
-## Environment Setup
+### `POST /chat/stream`
+Streams an AI response as Server-Sent Events.
 
-Make sure to configure any necessary environment variables:
-- Backend: Check `main.py` for required configurations
-- Frontend: Firebase configuration in `firebase.js`
-
-## Building for Production
-
-### Frontend Build
-```bash
-cd frontend/chat-ui
-npm run build
+**Request body:**
+```json
+{ "message": "Explain quantum computing" }
 ```
 
-This creates an optimized build in the `dist/` directory.
+**SSE stream:**
+```
+data: {"delta": "Quantum "}
+data: {"delta": "computing "}
+...
+data: [DONE]
+```
 
-## Troubleshooting
+### `POST /chat`
+Non-streaming fallback — returns full response at once.
 
-- **Port already in use**: Check if another process is using the ports and either kill it or configure a different port
-- **Dependencies not installing**: Make sure you have the correct Python version and Node.js version installed
-- **Firebase errors**: Verify Firebase configuration in `firebase.js` is correct
+### `GET /health`
+```json
+{ "status": "ok" }
+```
+
+---
+
+## Environment Variables
+
+### Backend (`backend/.env`)
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Recommended | Claude API key — [get one here](https://console.anthropic.com) |
+
+Without a key, the backend falls back to PollinationsAI (free, no key needed).
+
+### Frontend (`frontend/chat-ui/.env.local`)
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_API_BASE` | Production only | Backend URL, e.g. `https://ehan-ai-backend.onrender.com` |
+
+---
 
 ## License
 
-Please add your license information here.
-
-## Contributing
-
-Please add contribution guidelines here.
+MIT

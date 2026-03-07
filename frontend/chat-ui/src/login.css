@@ -1,0 +1,164 @@
+/* ==============================================
+   EHAN AI  ·  Login / Signup Page
+   ============================================== */
+
+.login-wrapper {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-container {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 420px;
+  animation: loginFadeIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes loginFadeIn {
+  from { opacity: 0; transform: translateY(30px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.login-card {
+  background: rgba(6, 6, 18, 0.82);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 24px;
+  padding: 40px 36px 36px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow:
+    0 0 0 1px rgba(0, 212, 255, 0.04),
+    0 24px 80px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.login-logo {
+  width: 54px;
+  height: 54px;
+  background: linear-gradient(135deg, #00c6ff, #7c3aed);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  animation: logoPulse 3.5s ease-in-out infinite;
+  box-shadow: 0 0 28px rgba(0, 212, 255, 0.3);
+}
+
+@keyframes logoPulse {
+  0%, 100% { box-shadow: 0 0 28px rgba(0, 212, 255, 0.3); }
+  50%       { box-shadow: 0 0 50px rgba(0, 212, 255, 0.55), 0 0 80px rgba(124, 58, 237, 0.2); }
+}
+
+.login-title {
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 6px;
+  background: linear-gradient(120deg, #ffffff 0%, #00d4ff 55%, #a855f7 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 5s linear infinite;
+  letter-spacing: -0.4px;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 0%   center; }
+  100% { background-position: 200% center; }
+}
+
+.login-subtitle {
+  text-align: center;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 28px;
+}
+
+.login-field {
+  margin-bottom: 14px;
+}
+
+.login-field input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.9);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.login-field input::placeholder { color: rgba(255, 255, 255, 0.25); }
+
+.login-field input:focus {
+  border-color: rgba(0, 212, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.08);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.login-error {
+  background: rgba(255, 60, 60, 0.1);
+  border: 1px solid rgba(255, 80, 80, 0.25);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: rgba(255, 150, 150, 0.95);
+  margin-bottom: 14px;
+  animation: fadeUp 0.3s ease;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.login-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #00c6ff, #0080ff);
+  border: none;
+  border-radius: 12px;
+  padding: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+  box-shadow: 0 4px 20px rgba(0, 180, 255, 0.32);
+  margin-top: 4px;
+  font-family: inherit;
+}
+
+.login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0, 200, 255, 0.45);
+  background: linear-gradient(135deg, #00dfff, #0099ff);
+}
+
+.login-btn:active { transform: translateY(0); }
+
+.login-switch {
+  text-align: center;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.38);
+  margin: 18px 0 0;
+}
+
+.login-switch span {
+  color: rgba(0, 212, 255, 0.85);
+  cursor: pointer;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+.login-switch span:hover { color: #00d4ff; }

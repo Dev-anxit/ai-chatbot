@@ -1,7 +1,15 @@
 # Python
 .venv/
+venv/
+venv_new/
+backend/venv/
+backend/venv_new/
 backend/__pycache__/
+**/__pycache__/
 *.pyc
+
+# Build
+frontend/chat-ui/dist/
 
 # Secrets
 backend/.env
