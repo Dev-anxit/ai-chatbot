@@ -11,6 +11,10 @@ import asyncio
 import threading
 import json
 from dotenv import load_dotenv
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -121,26 +125,45 @@ async def chat_stream(req: ChatRequest):
             except Exception:
                 pass
 
-        # ── Fallback: PollinationsAI (simulate streaming) ────────────────
+        # ── Fallback: PollinationsAI (true streaming) ───────────────────
         try:
             client = AsyncClient(provider=PollinationsAI)
-            response = await client.chat.completions.create(
+            stream = client.chat.completions.create(
                 model="openai-fast",
                 messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+                stream=True,
             )
-            reply = response.choices[0].message.content.strip()
-            if reply:
-                words = reply.split(" ")
-                for i, w in enumerate(words):
-                    chunk = w + (" " if i < len(words) - 1 else "")
-                    full.append(chunk)
-                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
-                    await asyncio.sleep(0.012)
-                _cache[cache_key] = reply
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full.append(delta)
+                    yield f"data: {json.dumps({'delta': delta})}\n\n"
+            if full:
+                _cache[cache_key] = "".join(full)
                 yield "data: [DONE]\n\n"
                 return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"PollinationsAI fallback failed: {type(e).__name__}: {e}")
+
+        # ── Fallback 2: g4f auto-provider (true streaming) ──────────────
+        try:
+            client = AsyncClient()
+            stream = client.chat.completions.create(
+                model="",
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full.append(delta)
+                    yield f"data: {json.dumps({'delta': delta})}\n\n"
+            if full:
+                _cache[cache_key] = "".join(full)
+                yield "data: [DONE]\n\n"
+                return
+        except Exception as e:
+            logger.error(f"g4f auto-provider fallback failed: {type(e).__name__}: {e}")
 
         yield f"data: {json.dumps({'delta': 'Sorry, I could not get a response. Please try again.'})}\n\n"
         yield "data: [DONE]\n\n"
@@ -185,9 +208,28 @@ async def chat(req: ChatRequest):
 
     try:
         client = AsyncClient(provider=PollinationsAI)
-        response = await client.chat.completions.create(
-            model="openai-fast",
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="openai-fast",
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+            ),
+            timeout=45,
+        )
+        reply = response.choices[0].message.content.strip()
+        if reply:
+            _cache[cache_key] = reply
+            return ChatResponse(reply=reply)
+    except Exception:
+        pass
+
+    try:
+        client = AsyncClient()
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="",
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+            ),
+            timeout=30,
         )
         reply = response.choices[0].message.content.strip()
         if reply:

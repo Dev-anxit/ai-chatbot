@@ -122,18 +122,22 @@ export default function Chat() {
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
   // ── Core send (streaming) ────────────────────────────────────────────────
-  const sendMessage = useCallback(async (userText) => {
+  const sendMessage = useCallback(async (userText, addUserMsg = true) => {
     if (!userText?.trim() || isStreaming) return;
     const text = userText.trim();
     setInput("");
     setLoading(true);
 
-    const userMsg = { id: Date.now(), role: "user", text, time: new Date() };
-    const botId   = Date.now() + 1;
-    const botMsg  = { id: botId, role: "bot", text: "", time: new Date(), streaming: true };
+    const botId  = Date.now() + 1;
+    const botMsg = { id: botId, role: "bot", text: "", time: new Date(), streaming: true };
     streamingIdRef.current = botId;
 
-    setMessages((p) => [...p, userMsg, botMsg]);
+    if (addUserMsg) {
+      const userMsg = { id: Date.now(), role: "user", text, time: new Date() };
+      setMessages((p) => [...p, userMsg, botMsg]);
+    } else {
+      setMessages((p) => [...p, botMsg]);
+    }
 
     abortRef.current = new AbortController();
 
@@ -144,6 +148,16 @@ export default function Chat() {
         body: JSON.stringify({ message: text }),
         signal: abortRef.current.signal,
       });
+
+      if (!res.ok) {
+        setMessages((p) =>
+          p.map((m) => m.id === botId ? { ...m, text: `Server error (${res.status}). Please try again.`, isError: true, streaming: false } : m)
+        );
+        setLoading(false);
+        setIsStreaming(false);
+        streamingIdRef.current = null;
+        return;
+      }
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
@@ -211,7 +225,7 @@ export default function Chat() {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser || isStreaming) return;
     setMessages((p) => p.filter((m) => !(m.role === "bot" && p.indexOf(m) === p.length - 1)));
-    sendMessage(lastUser.text);
+    sendMessage(lastUser.text, false);
   };
 
   const isLastBotMessage = (m, i) =>
@@ -333,8 +347,8 @@ export default function Chat() {
             </div>
           ))}
 
-          {/* Typing indicator (before first stream chunk) */}
-          {loading && (
+          {/* Typing indicator — only show if no streaming bot message exists yet */}
+          {loading && !messages.some((m) => m.streaming) && (
             <div className="msg-row bot">
               <div className="bot-avatar">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
