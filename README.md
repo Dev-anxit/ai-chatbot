@@ -3,8 +3,8 @@
 A professional AI chatbot with a streaming FastAPI backend and a React frontend featuring real-time token-by-token responses, syntax-highlighted code blocks, and a neural network animated background.
 
 **Live Demo:**
-- Frontend: [ehan-ai.vercel.app](https://ehan-ai.vercel.app) *(deploy to update)*
-- Backend API: [ehan-ai-backend.onrender.com](https://ehan-ai-backend.onrender.com) *(deploy to update)*
+- Frontend: [chat-ui-lake-nu.vercel.app](https://chat-ui-lake-nu.vercel.app)
+- Backend API: [ehan-ai-backend.onrender.com](https://ehan-ai-backend.onrender.com)
 
 ---
 
