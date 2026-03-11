@@ -83,6 +83,8 @@ export default function Chat() {
   const [copiedMsgId, setCopiedMsgId]     = useState(null);
   const [reactions, setReactions]         = useState({});
   const [showClearModal, setShowClearModal] = useState(false);
+  const [isListening, setIsListening]     = useState(false);
+  const [speakingId, setSpeakingId]       = useState(null);
 
   const messagesEndRef  = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -126,7 +128,10 @@ export default function Chat() {
       }
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.speechSynthesis?.cancel();
+    };
   }, [messages.length]);
 
   useEffect(() => { textareaRef.current?.focus(); }, []);
@@ -239,6 +244,38 @@ export default function Chat() {
     navigator.clipboard.writeText(text);
     setCopiedMsgId(id);
     setTimeout(() => setCopiedMsgId(null), 2000);
+  };
+
+  const startListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice input is not supported in your browser.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    setIsListening(true);
+    recognition.onresult = (e) => {
+      setInput((prev) => prev + (prev ? " " : "") + e.results[0][0].transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+  };
+
+  const readAloud = (msgId, text) => {
+    if (speakingId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ""));
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+    setSpeakingId(msgId);
+    window.speechSynthesis.speak(utterance);
   };
 
   const regenerate = () => {
@@ -432,6 +469,17 @@ export default function Chat() {
                             <path d="M21 13h-2V2h2a1 1 0 011 1v9a1 1 0 01-1 1z" stroke={reactions[m.id] === "down" ? "#ef4444" : "currentColor"} strokeWidth="1.8"/>
                           </svg>
                         </button>
+                        <button
+                          className={`action-btn${speakingId === m.id ? " speaking" : ""}`}
+                          onClick={() => readAloud(m.id, m.text)}
+                          title={speakingId === m.id ? "Stop reading" : "Read aloud"}
+                        >
+                          {speakingId === m.id ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          )}
+                        </button>
                       </>
                     )}
                     {m.role === "bot" && isLastBotMessage(m, i) && !isStreaming && (
@@ -472,8 +520,27 @@ export default function Chat() {
         )}
 
         <div className="chat-input-area">
+          <div className="quick-actions-bar">
+            {[
+              { label: "Summarize", text: "Summarize this in a few bullet points:\n\n" },
+              { label: "Explain Code", text: "Explain how this code works:\n\n" },
+              { label: "Fix Grammar", text: "Fix the grammar and rewrite professionally:\n\n" },
+              { label: "Translate", text: "Translate the following to English:\n\n" }
+            ].map(action => (
+              <button key={action.label} className="quick-action-btn" onClick={() => { setInput(action.text); textareaRef.current?.focus(); }}>
+                {action.label}
+              </button>
+            ))}
+          </div>
           <div className="input-shell">
             <div className="scan-line" />
+            <button 
+              className={`mic-btn${isListening ? " listening" : ""}`} 
+              onClick={startListening}
+              title={isListening ? "Listening..." : "Voice Input"}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" stroke="currentColor" strokeWidth="2"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
             <textarea
               ref={textareaRef}
               className="chat-textarea"
