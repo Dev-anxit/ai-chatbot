@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import NeuralBackground from "./NeuralBackground";
@@ -702,7 +702,12 @@ export default function Chat() {
                       <div className="typing-dot-wrap"><span /><span /><span /></div>
                     ) : (
                       <div className="msg-body">
-                        <ReactMarkdown components={mdComponents}>{m.text}</ReactMarkdown>
+                        <ReactMarkdown 
+                          components={mdComponents} 
+                          remarkPlugins={[remarkGfm]}
+                        >
+                          {m.text}
+                        </ReactMarkdown>
                       </div>
                     )}
                     <span className="msg-time">{formatTime(m.time)}</span>
