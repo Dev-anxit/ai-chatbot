@@ -8,6 +8,19 @@ import "./App.css";
 const STORAGE_KEY = "ehan_ai_messages";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+// Client-side safety net: strip any promotional text that slips through
+function stripAds(text) {
+  return text
+    .replace(/🌸.*?Pollinations.*?(?:\.|$)/gis, "")
+    .replace(/\*\*Support Pollinations.*$/gim, "")
+    .replace(/Support Pollinations.*$/gim, "")
+    .replace(/Powered by Pollinations.*$/gim, "")
+    .replace(/---\s*\n.*?Pollinations.*$/gims, "")
+    .replace(/\n+\s*\*?\s*(?:Ad|Advertisement)\s*\*?\s*\n.*$/gims, "")
+    .replace(/\[.*?pollinations.*?\].*$/gim, "")
+    .trimEnd();
+}
+
 function formatTime(date) {
   return date?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -188,8 +201,9 @@ export default function Chat() {
             if (delta) {
               if (firstChunk) { setLoading(false); setIsStreaming(true); firstChunk = false; }
               accumulated += delta;
+              const cleanText = stripAds(accumulated);
               setMessages((p) =>
-                p.map((m) => m.id === botId ? { ...m, text: accumulated, streaming: false } : m)
+                p.map((m) => m.id === botId ? { ...m, text: cleanText, streaming: false } : m)
               );
             }
           } catch {}

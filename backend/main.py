@@ -6,6 +6,7 @@ from g4f.client import AsyncClient
 from g4f.Provider import PollinationsAI
 import g4f
 import os
+import re
 import hashlib
 import asyncio
 import threading
@@ -39,13 +40,16 @@ app.add_middleware(
 _cache: dict[str, str] = {}
 
 SYSTEM_PROMPT = (
-    "You are Ehan AI — a smart, accurate, and efficient assistant. "
-    "Be clear and well-structured. "
-    "For simple questions, give brief direct answers. "
-    "For complex topics, explain step by step with examples. "
-    "Use markdown (bold, lists, code blocks) when it helps. "
-    "Never make up facts. "
-    "CRITICAL RULE: You will receive real-time web search results in the context. "
+    "You are Ehan AI — a world-class, professional AI assistant. "
+    "You provide accurate, well-researched, and beautifully formatted responses. "
+    "Rules: "
+    "1. For simple questions, give brief direct answers. "
+    "2. For complex topics, explain step by step with examples. "
+    "3. Use markdown formatting (bold, lists, code blocks, tables) to make responses clear and scannable. "
+    "4. Never make up facts. If unsure, say so. "
+    "5. NEVER include any promotional text, advertisements, watermarks, or third-party attributions in your response. "
+    "6. Do NOT mention any AI provider, API service, or platform name in your response. "
+    "7. You will receive real-time web search results in the context. "
     "You MUST use ONLY the information from those search results to answer questions about current events, recent news, sports results, and anything time-sensitive. "
     "Your training data is outdated. The search results are ALWAYS correct and override your training data. "
     "DO NOT guess or use your training data for recent events. ONLY use the search results provided."
@@ -56,6 +60,26 @@ SSE_HEADERS = {
     "X-Accel-Buffering": "no",
     "Connection": "keep-alive",
 }
+
+
+# ── Utility: strip promotional / ad watermarks from LLM responses ─────────────
+AD_PATTERNS = [
+    r"🌸.*?Pollinations.*?(?:\.|$)",
+    r"\*\*Support Pollinations.*?$",
+    r"Support Pollinations.*?$",
+    r"Powered by Pollinations.*?$",
+    r"---\s*\n.*?Pollinations.*?$",
+    r"\n+\s*\*?\s*(?:Ad|Advertisement)\s*\*?\s*\n.*$",
+    r"\[.*?pollinations.*?\].*$",
+    r"<.*?pollinations.*?>.*$",
+]
+
+def strip_ads(text: str) -> str:
+    """Remove any Pollinations promotional text from the response."""
+    for pattern in AD_PATTERNS:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    return text.rstrip()
+
 
 class ChatMessage(BaseModel):
     role: str
@@ -143,7 +167,8 @@ async def chat_stream(req: ChatRequest):
                     yield f"data: {json.dumps({'delta': chunk})}\n\n"
 
                 if full:
-                    _cache[cache_key] = "".join(full)
+                    cleaned = strip_ads("".join(full))
+                    _cache[cache_key] = cleaned
                     yield "data: [DONE]\n\n"
                     return
             except Exception:
@@ -161,9 +186,14 @@ async def chat_stream(req: ChatRequest):
                 delta = chunk.choices[0].delta.content
                 if delta:
                     full.append(delta)
-                    yield f"data: {json.dumps({'delta': delta})}\n\n"
             if full:
-                _cache[cache_key] = "".join(full)
+                cleaned = strip_ads("".join(full))
+                _cache[cache_key] = cleaned
+                # Stream the cleaned response word by word
+                words = cleaned.split(" ")
+                for i, w in enumerate(words):
+                    chunk = w + (" " if i < len(words) - 1 else "")
+                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
         except Exception as e:
@@ -181,9 +211,13 @@ async def chat_stream(req: ChatRequest):
                 delta = chunk.choices[0].delta.content
                 if delta:
                     full.append(delta)
-                    yield f"data: {json.dumps({'delta': delta})}\n\n"
             if full:
-                _cache[cache_key] = "".join(full)
+                cleaned = strip_ads("".join(full))
+                _cache[cache_key] = cleaned
+                words = cleaned.split(" ")
+                for i, w in enumerate(words):
+                    chunk = w + (" " if i < len(words) - 1 else "")
+                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
         except Exception as e:
@@ -232,8 +266,9 @@ async def chat(req: ChatRequest):
                 return next((b.text for b in full.content if hasattr(b, "text")), "")
             reply = await asyncio.to_thread(_call)
             if reply:
-                _cache[cache_key] = reply
-                return ChatResponse(reply=reply)
+                cleaned = strip_ads(reply)
+                _cache[cache_key] = cleaned
+                return ChatResponse(reply=cleaned)
         except Exception:
             pass
 
@@ -248,8 +283,9 @@ async def chat(req: ChatRequest):
         )
         reply = response.choices[0].message.content.strip()
         if reply:
-            _cache[cache_key] = reply
-            return ChatResponse(reply=reply)
+            cleaned = strip_ads(reply)
+            _cache[cache_key] = cleaned
+            return ChatResponse(reply=cleaned)
     except Exception:
         pass
 
@@ -264,8 +300,9 @@ async def chat(req: ChatRequest):
         )
         reply = response.choices[0].message.content.strip()
         if reply:
-            _cache[cache_key] = reply
-            return ChatResponse(reply=reply)
+            cleaned = strip_ads(reply)
+            _cache[cache_key] = cleaned
+            return ChatResponse(reply=cleaned)
     except Exception:
         pass
 
