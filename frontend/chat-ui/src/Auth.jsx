@@ -39,6 +39,7 @@ export default function Auth({ onAuthSuccess }) {
       }
       onAuthSuccess?.();
     } catch (err) {
+      console.error("Auth Error Object:", err);
       setError(err.message.replace("Firebase: ", ""));
     } finally {
       setLoading(false);
