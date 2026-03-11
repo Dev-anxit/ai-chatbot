@@ -5,3 +5,13 @@ python-dotenv>=1.0.0
 httpx>=0.28.0
 g4f>=7.3.0
 anthropic>=0.30.0
+ddgs
+beautifulsoup4
+lxml
+sentence-transformers
+langchain
+langchain-community
+langchain-core
+faiss-cpu
+apscheduler
+langchain-huggingface

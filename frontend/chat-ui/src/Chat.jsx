@@ -14,7 +14,7 @@ function formatTime(date) {
 
 function loadMessages() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = sessionStorage.getItem(STORAGE_KEY);
     if (!saved) return [];
     return JSON.parse(saved).map((m) => ({ ...m, time: new Date(m.time) }));
   } catch {
@@ -78,10 +78,10 @@ export default function Chat() {
   const abortRef        = useRef(null);
   const streamingIdRef  = useRef(null);
 
-  // Persist to localStorage
+  // Persist to sessionStorage
   useEffect(() => {
     const toSave = messages.filter((m) => m.text); // skip empty streaming placeholders
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   }, [messages]);
 
   // Scroll to bottom
@@ -212,7 +212,7 @@ export default function Chat() {
 
   const clearHistory = () => {
     setMessages([]);
-    localStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(STORAGE_KEY);
   };
 
   const copyMessage = (id, text) => {

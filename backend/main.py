@@ -13,12 +13,20 @@ import json
 from dotenv import load_dotenv
 import logging
 
+from rag.scheduler import start_scheduler
+from rag.orchestrator import gather_context_for_query
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 app = FastAPI()
+
+@app.on_event("startup")
+def startup_event():
+    start_scheduler()
+    logger.info("Background RAG Scheduler started.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,6 +82,12 @@ async def chat_stream(req: ChatRequest):
             yield "data: [DONE]\n\n"
         return StreamingResponse(cached_gen(), media_type="text/event-stream", headers=SSE_HEADERS)
 
+    # Gather Real-Time RAG Info and Web Search
+    real_time_context = gather_context_for_query(user_msg)
+    
+    # Inject Context into System Prompt
+    dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
+
     messages_payload = [{"role": "user", "content": user_msg}]
 
     async def generate():
@@ -99,7 +113,7 @@ async def chat_stream(req: ChatRequest):
                         with c.messages.stream(
                             model="claude-haiku-4-5",
                             max_tokens=1024,
-                            system=SYSTEM_PROMPT,
+                            system=dynamic_system_prompt,
                             messages=messages_payload,
                         ) as s:
                             for text in s.text_stream:
@@ -130,7 +144,7 @@ async def chat_stream(req: ChatRequest):
             client = AsyncClient(provider=PollinationsAI)
             stream = client.chat.completions.create(
                 model="openai-fast",
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
                 stream=True,
             )
             async for chunk in stream:
@@ -150,7 +164,7 @@ async def chat_stream(req: ChatRequest):
             client = AsyncClient()
             stream = client.chat.completions.create(
                 model="",
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
                 stream=True,
             )
             async for chunk in stream:
@@ -179,6 +193,12 @@ async def chat(req: ChatRequest):
     if cache_key in _cache:
         return ChatResponse(reply=_cache[cache_key])
 
+    # Gather Real-Time RAG Info and Web Search
+    real_time_context = gather_context_for_query(user_msg)
+    
+    # Inject Context into System Prompt
+    dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
+
     messages_payload = [{"role": "user", "content": user_msg}]
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
@@ -194,7 +214,7 @@ async def chat(req: ChatRequest):
                 with c.messages.stream(
                     model="claude-haiku-4-5",
                     max_tokens=1024,
-                    system=SYSTEM_PROMPT,
+                    system=dynamic_system_prompt,
                     messages=messages_payload,
                 ) as s:
                     full = s.get_final_message()
@@ -211,7 +231,7 @@ async def chat(req: ChatRequest):
         response = await asyncio.wait_for(
             client.chat.completions.create(
                 model="openai-fast",
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
             ),
             timeout=45,
         )
@@ -227,7 +247,7 @@ async def chat(req: ChatRequest):
         response = await asyncio.wait_for(
             client.chat.completions.create(
                 model="",
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages_payload],
+                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
             ),
             timeout=30,
         )
