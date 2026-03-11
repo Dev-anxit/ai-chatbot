@@ -22,12 +22,17 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = FastAPI()
+from contextlib import asynccontextmanager
 
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(application):
+    # Startup
     start_scheduler()
     logger.info("Background RAG Scheduler started.")
+    yield
+    # Shutdown (cleanup if needed)
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
