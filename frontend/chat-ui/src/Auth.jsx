@@ -4,7 +4,8 @@ import {
   createUserWithEmailAndPassword,
   updateProfile 
 } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 export default function Auth({ onAuthSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -25,6 +26,16 @@ export default function Auth({ onAuthSuccess }) {
       } else {
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(userCred.user, { displayName: name });
+        
+        // Store user info in Firestore as requested
+        // NOTE: Password is NOT stored here as it is securely handled by Firebase Auth
+        await setDoc(doc(db, "users", userCred.user.uid), {
+          uid: userCred.user.uid,
+          name: name,
+          email: email,
+          createdAt: serverTimestamp(),
+          role: "user"
+        });
       }
       onAuthSuccess?.();
     } catch (err) {
