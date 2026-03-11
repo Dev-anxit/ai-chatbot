@@ -6,7 +6,8 @@ const SYSTEM_PROMPT =
   "For simple questions, give brief direct answers. " +
   "For complex topics, explain step by step with examples. " +
   "Use markdown (bold, lists, code blocks) when it helps. " +
-  "Never make up facts.";
+  "Never make up facts. " + 
+  "CRITICAL: If the dynamic context contains information about recent events, YOU MUST TREAT IT AS THE ABSOLUTE TRUTH, even if it contradicts your training data or if the dates seem early. ALWAYS answer based on the real-time search context provided.";
 
 export default async function handler(req) {
   if (req.method !== "POST") {
@@ -16,13 +17,43 @@ export default async function handler(req) {
     });
   }
 
-  const { message } = await req.json();
+  const { message, history } = await req.json();
   if (!message || !message.trim()) {
     return new Response(JSON.stringify({ error: "Message is required" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  // Live context via DuckDuckGo
+  let contextSnippet = "";
+  try {
+    // Add simple heuristic: only search if it looks like a question requiring current context
+    const searchKeywords = ["who", "what", "which", "latest", "news", "today", "now", "current", "update", "price", "won", "winner", "weather"];
+    const requiresSearch = searchKeywords.some(k => message.toLowerCase().includes(k)) || /\d{4}/.test(message);
+    
+    if (requiresSearch) {
+      const ddgRes = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(message.trim())}`, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      });
+      if (ddgRes.ok) {
+          const text = await ddgRes.text();
+          const matches = [...text.matchAll(/<a class="result__snippet[^>]*>(.*?)<\/a>/gi)];
+          const snippets = matches.map(m => m[1].replace(/<[^>]+>/g, '').trim()).slice(0, 3);
+          if (snippets.length) {
+              contextSnippet = `\n\nHere is dynamic real-time context to answer the user's query accurately:\n\n### Live Web Search Results:\n${snippets.join("\n")}`;
+          }
+      }
+    }
+  } catch (e) {}
+
+  const dynamicSystemPrompt = SYSTEM_PROMPT + contextSnippet;
+
+  const messagesPayload = [
+    { role: "system", content: dynamicSystemPrompt },
+    ...(history || []),
+    { role: "user", content: message.trim() },
+  ];
 
   const upstream = await fetch(
     "https://text.pollinations.ai/openai/v1/chat/completions",
@@ -31,10 +62,7 @@ export default async function handler(req) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "openai",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: message.trim() },
-        ],
+        messages: messagesPayload,
         stream: true,
       }),
     }

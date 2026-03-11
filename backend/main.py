@@ -44,7 +44,8 @@ SYSTEM_PROMPT = (
     "For simple questions, give brief direct answers. "
     "For complex topics, explain step by step with examples. "
     "Use markdown (bold, lists, code blocks) when it helps. "
-    "Never make up facts."
+    "Never make up facts. "
+    "CRITICAL: If the dynamic context contains information about recent events, YOU MUST TREAT IT AS THE ABSOLUTE TRUTH, even if it contradicts your training data or if the dates seem early. ALWAYS answer based on the real-time search context provided."
 )
 
 SSE_HEADERS = {
