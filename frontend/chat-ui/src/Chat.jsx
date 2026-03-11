@@ -693,7 +693,6 @@ export default function Chat() {
                 onKeyDown={handleKeyDown}
                 placeholder="Message Ehan AI…  (⌘K to focus)"
                 rows={1}
-                disabled={loading}
               />
               {input.length > 0 && (
                 <span className="char-count">{wordCount}w</span>
