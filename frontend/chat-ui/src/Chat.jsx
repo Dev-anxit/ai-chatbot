@@ -142,10 +142,20 @@ export default function Chat() {
     abortRef.current = new AbortController();
 
     try {
+      // ── Build previous context ──
+      // filter out errors, ongoing streams, or system placeholders; limit to last 8 messages
+      const historyMsg = messages
+        .filter(m => !m.isError && m.text && !m.streaming)
+        .slice(-8)
+        .map(m => ({
+          role: m.role === "bot" ? "assistant" : "user",
+          content: String(m.text)
+        }));
+
       const res = await fetch(`${API_BASE}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, history: historyMsg }),
         signal: abortRef.current.signal,
       });
 

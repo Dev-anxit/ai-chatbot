@@ -53,8 +53,13 @@ SSE_HEADERS = {
     "Connection": "keep-alive",
 }
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[ChatMessage] = []
 
 class ChatResponse(BaseModel):
     reply: str
@@ -88,7 +93,8 @@ async def chat_stream(req: ChatRequest):
     # Inject Context into System Prompt
     dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
 
-    messages_payload = [{"role": "user", "content": user_msg}]
+    messages_payload = [{"role": h.role, "content": h.content} for h in req.history]
+    messages_payload.append({"role": "user", "content": user_msg})
 
     async def generate():
         full: list[str] = []
@@ -199,7 +205,8 @@ async def chat(req: ChatRequest):
     # Inject Context into System Prompt
     dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
 
-    messages_payload = [{"role": "user", "content": user_msg}]
+    messages_payload = [{"role": h.role, "content": h.content} for h in req.history]
+    messages_payload.append({"role": "user", "content": user_msg})
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     anthropic_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
