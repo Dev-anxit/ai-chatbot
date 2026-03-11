@@ -127,6 +127,12 @@ export default function Chat() {
   const [user, setUser]                   = useState(null);
   const [showAuth, setShowAuth]           = useState(false);
   const [activeMenuId, setActiveMenuId]   = useState(null);
+  const [currentMode, setCurrentMode]     = useState("general"); // general, image, code, search
+  const [showAppsModal, setShowAppsModal] = useState(false);
+  const [showGPTsModal, setShowGPTsModal] = useState(false);
+  const [searchTerm, setSearchTerm]       = useState("");
+  const [showSearch, setShowSearch]       = useState(false);
+  const [persona, setPersona]             = useState("Ehan AI");
 
   const messagesEndRef  = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -345,6 +351,25 @@ export default function Chat() {
       console.error("Logout error:", err);
     }
   };
+
+  const getFilteredSessions = () => {
+    if (!searchTerm) return sessions;
+    return sessions.filter(s => 
+      s.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.messages.some(m => m.text.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  };
+
+  const setAppMode = (mode) => {
+    setCurrentMode(mode);
+    if (mode === "image") {
+      setInput("Generate a beautiful image showing ");
+    } else if (mode === "code") {
+      setInput("Help me write a Python function for ");
+    }
+    setSidebarOpen(false);
+  };
+
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
@@ -582,42 +607,54 @@ export default function Chat() {
             <span>New chat</span>
           </button>
 
-          <button className="sidebar-item search-btn" onClick={() => alert("Search functionality coming soon!")}>
+          <div className={`sidebar-item search-btn ${showSearch ? 'active' : ''}`} onClick={() => setShowSearch(!showSearch)}>
              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
              <span>Search chats</span>
-          </button>
+          </div>
+          
+          {showSearch && (
+            <div className="sidebar-search-box">
+              <input 
+                type="text" 
+                placeholder="Find in messages..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
 
-          <button className="sidebar-item plugin-btn">
+          <div className={`sidebar-item plugin-btn ${currentMode === 'image' ? 'active' : ''}`} onClick={() => setAppMode('image')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             <span>Images</span>
-          </button>
+          </div>
           
-          <button className="sidebar-item plugin-btn">
+          <div className="sidebar-item plugin-btn" onClick={() => setShowAppsModal(true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2"/></svg>
             <span>Apps</span>
-          </button>
+          </div>
           
           <div className="sidebar-divider"></div>
 
-          <button className="sidebar-item plugin-btn">
+          <div className={`sidebar-item plugin-btn ${currentMode === 'code' ? 'active' : ''}`} onClick={() => setAppMode('code')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 0110 10v4a2 2 0 01-2 2h-4v-6h4a8 8 0 10-16 0h4v6H4a2 2 0 01-2-2v-4a10 10 0 0110-10z" stroke="currentColor" strokeWidth="2"/></svg>
             <span>Codex</span>
-          </button>
+          </div>
 
-          <button className="sidebar-item plugin-btn">
+          <div className="sidebar-item plugin-btn" onClick={() => setShowGPTsModal(true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" stroke="currentColor" strokeWidth="2"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="2"/></svg>
             <span>GPTs</span>
-          </button>
+          </div>
         </div>
 
         <div className="sidebar-history">
-          <div className="history-title">Recent Chats</div>
+          <div className="history-title">{searchTerm ? "Search Results" : "Recent Chats"}</div>
           {user ? (
             <>
-              {sessions.length === 0 && (
-                <div className="history-empty">No conversations yet</div>
+              {getFilteredSessions().length === 0 && (
+                <div className="history-empty">{searchTerm ? "No results found" : "No conversations yet"}</div>
               )}
-              {sessions.map(s => (
+              {getFilteredSessions().map(s => (
                 <div key={s.id} className={`history-item-wrap ${currentSessionId === s.id ? 'active' : ''}`}>
                   <button className="history-item" onClick={() => selectSession(s.id)}>
                     {s.title}
@@ -710,7 +747,7 @@ export default function Chat() {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M3 12h18M3 6h18M3 18h18" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
               <div className="header-text">
-                <h1 className="header-title">Ehan AI</h1>
+                <h1 className="header-title">{persona} <span style={{ fontSize: '10px', opacity: 0.5, fontWeight: 400 }}>{currentMode.toUpperCase()}</span></h1>
                 {user && (
                    <span className="user-greeting">Hi, {user.displayName?.split(" ")[0] || "User"}</span>
                 )}
@@ -917,9 +954,18 @@ export default function Chat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Message Ehan AI…  (⌘K to focus)"
+                placeholder={
+                  currentMode === "image" ? "Describe the image you want to create…" :
+                  currentMode === "code"  ? "Ask a coding question or paste your code…" :
+                  "Message Ehan AI…  (⌘K to focus)"
+                }
                 rows={1}
               />
+              {currentMode !== "general" && (
+                <button className="mode-clear-btn" onClick={() => setCurrentMode("general")} title="Return to general chat">
+                  ✕
+                </button>
+              )}
               {input.length > 0 && (
                 <span className="char-count">{wordCount}w</span>
               )}
@@ -955,6 +1001,51 @@ export default function Chat() {
 
       {showAuth && (
         <Auth onAuthSuccess={() => setShowAuth(false)} />
+      )}
+
+      {showAppsModal && (
+        <div className="modal-overlay" onClick={() => setShowAppsModal(false)}>
+          <div className="modal-box apps-grid" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">AI Toolbox</h3>
+            <div className="apps-container">
+              {[
+                { name: "Reasoning", icon: "🧠", desc: "Step-by-step logic", mode: "general" },
+                { name: "Analytics", icon: "📊", desc: "Data insights", mode: "general" },
+                { name: "Creative", icon: "🎨", desc: "Artistic writing", mode: "general" },
+                { name: "Math", icon: "🔢", desc: "Solver & Calculator", mode: "general" }
+              ].map(app => (
+                <div key={app.name} className="app-card" onClick={() => { setAppMode(app.mode); setShowAppsModal(false); }}>
+                  <div className="app-card-icon">{app.icon}</div>
+                  <div className="app-card-name">{app.name}</div>
+                  <div className="app-card-desc">{app.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGPTsModal && (
+        <div className="modal-overlay" onClick={() => setShowGPTsModal(false)}>
+          <div className="modal-box gpts-list" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Choose Personality</h3>
+            <div className="gpts-container">
+              {[
+                { name: "Ehan AI", icon: "⚡", bio: "Your general assistant" },
+                { name: "Creative Writer", icon: "✍️", bio: "Expert in storytelling" },
+                { name: "Tech Specialist", icon: "💻", bio: "Depth technical focus" }
+              ].map(p => (
+                <div key={p.name} className="gpt-item" onClick={() => { setPersona(p.name); setShowGPTsModal(false); }}>
+                  <div className="gpt-icon">{p.icon}</div>
+                  <div className="gpt-text">
+                    <div className="gpt-name">{p.name}</div>
+                    <div className="gpt-bio">{p.bio}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
