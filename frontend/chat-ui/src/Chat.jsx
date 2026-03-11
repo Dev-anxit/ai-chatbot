@@ -111,8 +111,8 @@ const mdComponents = {
 
 export default function Chat() {
   const [sessions, setSessions]           = useState(loadSessions);
-  const [currentSessionId, setCurrentSessionId] = useState(() => sessions.length > 0 ? sessions[0].id : null);
-  const [messages, setMessages]           = useState(() => sessions.length > 0 ? sessions[0].messages : []);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [messages, setMessages]           = useState([]);
   
   const [input, setInput]                 = useState("");
   const [loading, setLoading]             = useState(false);
@@ -188,9 +188,8 @@ export default function Chat() {
       
       setSessions(remoteSessions);
       
-      if (isInitialLoad.current && remoteSessions.length > 0) {
-        setMessages(remoteSessions[0].messages);
-        setCurrentSessionId(remoteSessions[0].id);
+      // Removed auto-load of last chat to start with fresh session every time
+      if (isInitialLoad.current) {
         isInitialLoad.current = false;
       }
     });
