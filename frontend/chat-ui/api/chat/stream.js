@@ -165,22 +165,67 @@ export default async function handler(req) {
     { role: "user", content: message.trim() },
   ];
 
-  const upstream = await fetch(
-    "https://text.pollinations.ai/openai/v1/chat/completions",
+  // Try multiple upstream endpoints
+  let upstream = null;
+  const endpoints = [
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "openai",
-        messages: messagesPayload,
-        stream: true,
-      }),
-    }
-  );
+      url: "https://text.pollinations.ai/openai/v1/chat/completions",
+      body: { model: "openai", messages: messagesPayload, stream: true },
+    },
+    {
+      url: "https://text.pollinations.ai/openai/v1/chat/completions",
+      body: { model: "mistral", messages: messagesPayload, stream: true },
+    },
+  ];
 
-  if (!upstream.ok) {
+  for (const ep of endpoints) {
+    try {
+      upstream = await fetch(ep.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ep.body),
+      });
+      if (upstream.ok) break;
+      upstream = null;
+    } catch {
+      upstream = null;
+    }
+  }
+
+  if (!upstream || !upstream.ok) {
+    // Non-streaming fallback: get a direct response
+    try {
+      const fallbackRes = await fetch(
+        "https://text.pollinations.ai/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "openai",
+            messages: messagesPayload,
+            stream: false,
+          }),
+        }
+      );
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        const reply = data?.choices?.[0]?.message?.content || "Sorry, I could not get a response.";
+        const encoder = new TextEncoder();
+        const body = encoder.encode(
+          `data: ${JSON.stringify({ delta: reply })}\n\ndata: [DONE]\n\n`
+        );
+        return new Response(body, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      }
+    } catch {}
+
     return new Response(
-      JSON.stringify({ error: `Upstream error ${upstream.status}` }),
+      JSON.stringify({ error: "All upstream providers failed" }),
       { status: 502, headers: { "Content-Type": "application/json" } }
     );
   }
