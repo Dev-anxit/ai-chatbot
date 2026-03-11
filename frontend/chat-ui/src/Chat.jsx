@@ -560,19 +560,28 @@ export default function Chat() {
 
         <div className="sidebar-history">
           <div className="history-title">Recent Chats</div>
-          {sessions.length === 0 && (
-            <div className="history-empty">No conversations yet</div>
-          )}
-          {sessions.map(s => (
-            <div key={s.id} className={`history-item-wrap ${currentSessionId === s.id ? 'active' : ''}`}>
-               <button className="history-item" onClick={() => selectSession(s.id)}>
-                 {s.title}
-               </button>
-               <button className="history-delete" onClick={(e) => deleteSession(e, s.id)} title="Delete Chat">
-                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-               </button>
+          {user ? (
+            <>
+              {sessions.length === 0 && (
+                <div className="history-empty">No conversations yet</div>
+              )}
+              {sessions.map(s => (
+                <div key={s.id} className={`history-item-wrap ${currentSessionId === s.id ? 'active' : ''}`}>
+                  <button className="history-item" onClick={() => selectSession(s.id)}>
+                    {s.title}
+                  </button>
+                  <button className="history-delete" onClick={(e) => deleteSession(e, s.id)} title="Delete Chat">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="history-login-prompt">
+              <p>Sign in to save and see your chat history</p>
+              <button className="sidebar-login-btn" onClick={() => setShowAuth(true)}>Sign In</button>
             </div>
-          ))}
+          )}
         </div>
 
         <div className="sidebar-footer">
