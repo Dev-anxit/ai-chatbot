@@ -3,6 +3,20 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import NeuralBackground from "./NeuralBackground";
+import Auth from "./Auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  setDoc, 
+  doc, 
+  deleteDoc, 
+  orderBy,
+  getDocs
+} from "firebase/firestore";
+import { auth, db } from "./firebase";
 import "./App.css";
 
 const SESSIONS_KEY = "ehan_ai_sessions";
@@ -109,12 +123,65 @@ export default function Chat() {
   const [isListening, setIsListening]     = useState(false);
   const [speakingId, setSpeakingId]       = useState(null);
   const [sidebarOpen, setSidebarOpen]     = useState(false); // for mobile
+  const [user, setUser]                   = useState(null);
+  const [showAuth, setShowAuth]           = useState(false);
 
   const messagesEndRef  = useRef(null);
   const messagesAreaRef = useRef(null);
   const textareaRef     = useRef(null);
   const abortRef        = useRef(null);
   const streamingIdRef  = useRef(null);
+  const isInitialLoad   = useRef(true);
+
+  // Auth Listener
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        setShowAuth(false);
+      } else {
+        // Clear sessions when logging out
+        setSessions([]);
+        setMessages([]);
+        setCurrentSessionId(null);
+        // Load local sessions again
+        setSessions(loadSessions());
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Firestore Sync (Load)
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, "sessions"), 
+      where("userId", "==", user.uid),
+      orderBy("updatedAt", "desc")
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const remoteSessions = snap.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+        messages: doc.data().messages.map(m => ({
+          ...m,
+          time: m.time?.toDate() || new Date(m.timestamp)
+        }))
+      }));
+      
+      setSessions(remoteSessions);
+      
+      if (isInitialLoad.current && remoteSessions.length > 0) {
+        setMessages(remoteSessions[0].messages);
+        setCurrentSessionId(remoteSessions[0].id);
+        isInitialLoad.current = false;
+      }
+    });
+
+    return unsub;
+  }, [user]);
 
   // Sync messages to sessions array
   useEffect(() => {
@@ -152,12 +219,33 @@ export default function Chat() {
 
   // Persist sessions
   useEffect(() => {
+    if (sessions.length === 0) return;
+
     const toSave = sessions.map(s => ({
       ...s,
-      messages: s.messages.filter(m => m.text && !m.streaming)
+      messages: s.messages.filter(m => m.text && !m.streaming).map(m => ({
+        ...m,
+        time: m.time instanceof Date ? m.time : (m.time?.toDate ? m.time.toDate() : new Date())
+      }))
     })).filter(s => s.messages.length > 0);
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(toSave));
-  }, [sessions]);
+
+    if (user) {
+      // Save each session to Firestore
+      toSave.forEach(async (s) => {
+        try {
+          await setDoc(doc(db, "sessions", s.id), {
+            ...s,
+            userId: user.uid,
+            timestamp: Date.now()
+          });
+        } catch (err) {
+          console.error("Error saving to Firestore:", err);
+        }
+      });
+    } else {
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify(toSave));
+    }
+  }, [sessions, user]);
 
   const handleNewChat = () => {
     if (isStreaming) return;
@@ -177,13 +265,31 @@ export default function Chat() {
     if (window.innerWidth <= 768) setSidebarOpen(false);
   };
 
-  const deleteSession = (e, id) => {
+  const deleteSession = async (e, id) => {
     e.stopPropagation();
     if (isStreaming) return;
-    setSessions(prev => prev.filter(s => s.id !== id));
+
+    if (user) {
+      try {
+        await deleteDoc(doc(db, "sessions", id));
+      } catch (err) {
+        console.error("Error deleting from Firestore:", err);
+      }
+    } else {
+      setSessions(prev => prev.filter(s => s.id !== id));
+    }
+
     if (currentSessionId === id || sessions.length === 1) {
       setCurrentSessionId(null);
       setMessages([]);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Logout error:", err);
     }
   };
 
@@ -453,6 +559,9 @@ export default function Chat() {
 
         <div className="sidebar-history">
           <div className="history-title">Recent Chats</div>
+          {sessions.length === 0 && (
+            <div className="history-empty">No conversations yet</div>
+          )}
           {sessions.map(s => (
             <div key={s.id} className={`history-item-wrap ${currentSessionId === s.id ? 'active' : ''}`}>
                <button className="history-item" onClick={() => selectSession(s.id)}>
@@ -463,6 +572,24 @@ export default function Chat() {
                </button>
             </div>
           ))}
+        </div>
+
+        <div className="sidebar-footer">
+          {user ? (
+            <div className="user-profile">
+              <div className="user-avatar">
+                {user.displayName?.charAt(0) || user.email?.charAt(0)}
+              </div>
+              <div className="user-info">
+                <span className="user-name">{user.displayName || "Ehan User"}</span>
+                <button className="logout-btn" onClick={handleLogout}>Log out</button>
+              </div>
+            </div>
+          ) : (
+            <button className="login-prompt-btn" onClick={() => setShowAuth(true)}>
+              Login / Sign Up
+            </button>
+          )}
         </div>
       </div>
 
@@ -493,6 +620,9 @@ export default function Chat() {
               </button>
               <div className="header-text">
                 <h1 className="header-title">Ehan AI</h1>
+                {user && (
+                   <span className="user-greeting">Hi, {user.displayName?.split(" ")[0] || "User"}</span>
+                )}
                 <span className="header-status">
                   <span className="status-dot" />
                   {isStreaming ? "Generating…" : "Online"}
@@ -725,6 +855,10 @@ export default function Chat() {
       {/* Mobile Sidebar overlay backdrop */}
       {sidebarOpen && window.innerWidth <= 768 && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)}></div>
+      )}
+
+      {showAuth && (
+        <Auth onAuthSuccess={() => setShowAuth(false)} />
       )}
     </div>
   );

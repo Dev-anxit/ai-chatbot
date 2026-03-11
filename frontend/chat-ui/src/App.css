@@ -1297,3 +1297,236 @@
     opacity: 1;
   }
 }
+/* ---------- Authentication ---------- */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+.auth-box {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(15, 15, 30, 0.9);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 24px;
+  padding: 32px;
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8);
+  animation: scaleUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.auth-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.auth-header p {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin-left: 4px;
+}
+
+.auth-field input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.auth-field input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
+}
+
+.auth-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.auth-submit {
+  background: linear-gradient(135deg, #00d4ff, #a855f7);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: transform 0.2s;
+}
+
+.auth-submit:hover {
+  transform: translateY(-2px);
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.auth-footer {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.auth-footer button {
+  background: none;
+  border: none;
+  color: #00d4ff;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  margin-left: 4px;
+}
+
+.auth-close {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  margin-top: 16px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---------- Sidebar Footer & Profile ---------- */
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.login-prompt-btn {
+  width: 100%;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #fff;
+  padding: 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.login-prompt-btn:hover {
+  background: rgba(0, 212, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #00d4ff, #a855f7);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.user-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logout-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11.5px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  color: #ef4444;
+}
+
+.history-empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.user-greeting {
+  font-size: 12px;
+  color: rgba(0, 212, 255, 0.8);
+  font-weight: 500;
+  margin-top: -4px;
+  display: block;
+}
