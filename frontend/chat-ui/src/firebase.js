@@ -11,10 +11,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Debugging check to see if keys are missing in production
-if (!firebaseConfig.apiKey) {
-  console.error("Firebase Error: VITE_FIREBASE_API_KEY is missing. Check Vercel Environment Variables.");
-}
+// Debugging check (securely logs only if keys exist)
+console.log("Firebase Init Check:", {
+  hasApiKey: !!firebaseConfig.apiKey,
+  hasAuthDomain: !!firebaseConfig.authDomain,
+  hasProjectId: !!firebaseConfig.projectId,
+  apiKeyPrefix: firebaseConfig.apiKey ? firebaseConfig.apiKey.slice(0, 4) + "..." : "missing"
+});
 
 const app = initializeApp(firebaseConfig);
 
