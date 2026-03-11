@@ -1,6 +1,0 @@
-{
-  "framework": "vite",
-  "rootDirectory": "frontend/chat-ui",
-  "buildCommand": "npm install && npm run build",
-  "outputDirectory": "dist"
-}
