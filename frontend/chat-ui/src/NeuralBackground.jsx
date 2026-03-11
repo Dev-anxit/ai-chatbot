@@ -41,7 +41,7 @@ export default function NeuralBackground() {
 
       ctx.clearRect(0, 0, w, h);
 
-      // Deep space background
+
       const bg = ctx.createRadialGradient(w * 0.5, h * 0.5, 0, w * 0.5, h * 0.5, w * 0.75);
       bg.addColorStop(0, "#080818");
       bg.addColorStop(0.6, "#050510");
@@ -49,7 +49,7 @@ export default function NeuralBackground() {
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, w, h);
 
-      // Slow-moving ambient orbs
+
       const t = frame * 0.003;
       const orb1x = w * (0.15 + 0.08 * Math.sin(t));
       const orb1y = h * (0.25 + 0.06 * Math.cos(t * 0.7));
@@ -75,7 +75,7 @@ export default function NeuralBackground() {
       ctx.fillStyle = g3;
       ctx.fillRect(0, 0, w, h);
 
-      // Update and draw particles
+
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
         p.x += p.vx;
@@ -85,7 +85,7 @@ export default function NeuralBackground() {
         if (p.y < 0) { p.y = 0; p.vy *= -1; }
         if (p.y > h) { p.y = h; p.vy *= -1; }
 
-        // Connections
+
         for (let j = i + 1; j < particles.length; j++) {
           const p2 = particles[j];
           const dx = p.x - p2.x;
@@ -102,7 +102,7 @@ export default function NeuralBackground() {
           }
         }
 
-        // Particle glow
+
         const cr = p.isCyan ? "0, 212, 255" : "168, 85, 247";
         const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 5);
         glow.addColorStop(0, `rgba(${cr}, 0.35)`);
@@ -112,7 +112,7 @@ export default function NeuralBackground() {
         ctx.fillStyle = glow;
         ctx.fill();
 
-        // Particle core
+
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fillStyle = p.isCyan ? "#00d4ff" : "#a855f7";

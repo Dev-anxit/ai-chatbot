@@ -13,6 +13,7 @@ import threading
 import json
 from dotenv import load_dotenv
 import logging
+from contextlib import asynccontextmanager
 
 from rag.scheduler import start_scheduler
 from rag.orchestrator import gather_context_for_query
@@ -22,15 +23,11 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-from contextlib import asynccontextmanager
-
 @asynccontextmanager
 async def lifespan(application):
-    # Startup
     start_scheduler()
     logger.info("Background RAG Scheduler started.")
     yield
-    # Shutdown (cleanup if needed)
 
 app = FastAPI(lifespan=lifespan)
 
@@ -66,8 +63,6 @@ SSE_HEADERS = {
     "Connection": "keep-alive",
 }
 
-
-# ── Utility: strip promotional / ad watermarks from LLM responses ─────────────
 AD_PATTERNS = [
     r"🌸.*?Pollinations.*?(?:\.|$)",
     r"\*\*Support Pollinations.*?$",
@@ -80,7 +75,6 @@ AD_PATTERNS = [
 ]
 
 def strip_ads(text: str) -> str:
-    """Remove any Pollinations promotional text from the response."""
     for pattern in AD_PATTERNS:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
     return text.rstrip()
@@ -108,7 +102,6 @@ async def chat_stream(req: ChatRequest):
     user_msg = req.message.strip()
     cache_key = hashlib.md5(user_msg.lower().encode()).hexdigest()
 
-    # Cache hit — simulate streaming so it still feels live
     if cache_key in _cache:
         async def cached_gen():
             text = _cache[cache_key]
@@ -120,10 +113,7 @@ async def chat_stream(req: ChatRequest):
             yield "data: [DONE]\n\n"
         return StreamingResponse(cached_gen(), media_type="text/event-stream", headers=SSE_HEADERS)
 
-    # Gather Real-Time RAG Info and Web Search
     real_time_context = gather_context_for_query(user_msg)
-    
-    # Inject Context into System Prompt
     dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
 
     messages_payload = [{"role": h.role, "content": h.content} for h in req.history]
@@ -132,7 +122,6 @@ async def chat_stream(req: ChatRequest):
     async def generate():
         full: list[str] = []
 
-        # ── Primary: Claude via Anthropic SDK ────────────────────────────
         anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         anthropic_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
 
@@ -179,7 +168,6 @@ async def chat_stream(req: ChatRequest):
             except Exception:
                 pass
 
-        # ── Fallback: PollinationsAI (true streaming) ───────────────────
         try:
             client = AsyncClient(provider=PollinationsAI)
             stream = client.chat.completions.create(
@@ -194,7 +182,6 @@ async def chat_stream(req: ChatRequest):
             if full:
                 cleaned = strip_ads("".join(full))
                 _cache[cache_key] = cleaned
-                # Stream the cleaned response word by word
                 words = cleaned.split(" ")
                 for i, w in enumerate(words):
                     chunk = w + (" " if i < len(words) - 1 else "")
@@ -204,7 +191,6 @@ async def chat_stream(req: ChatRequest):
         except Exception as e:
             logger.error(f"PollinationsAI fallback failed: {type(e).__name__}: {e}")
 
-        # ── Fallback 2: g4f auto-provider (true streaming) ──────────────
         try:
             client = AsyncClient()
             stream = client.chat.completions.create(
@@ -234,7 +220,6 @@ async def chat_stream(req: ChatRequest):
     return StreamingResponse(generate(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
-# Keep non-streaming endpoint as fallback
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     user_msg = req.message.strip()
@@ -242,10 +227,7 @@ async def chat(req: ChatRequest):
     if cache_key in _cache:
         return ChatResponse(reply=_cache[cache_key])
 
-    # Gather Real-Time RAG Info and Web Search
     real_time_context = gather_context_for_query(user_msg)
-    
-    # Inject Context into System Prompt
     dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
 
     messages_payload = [{"role": h.role, "content": h.content} for h in req.history]

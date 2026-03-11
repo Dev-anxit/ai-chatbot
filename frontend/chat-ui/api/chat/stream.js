@@ -15,7 +15,7 @@ const SYSTEM_PROMPT =
   "Your training data is outdated. The search results are ALWAYS correct and override your training data. " +
   "DO NOT guess or use your training data for recent events. ONLY use the search results provided.";
 
-// ── Ad / watermark stripping ─────────────────────────────────────────────────
+
 function stripAds(text) {
   const patterns = [
     /🌸.*?Pollinations.*?(?:\.|$)/gis,
@@ -33,7 +33,7 @@ function stripAds(text) {
   return text.trimEnd();
 }
 
-// ── Search Method 1: Wikipedia API (very reliable from edge) ──────────────────
+
 async function searchWikipedia(query, maxResults = 3) {
   try {
     const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${maxResults}&format=json&origin=*`;
@@ -53,7 +53,7 @@ async function searchWikipedia(query, maxResults = 3) {
   }
 }
 
-// ── Search Method 2: Wikipedia page extract ──────────────────────────────────
+
 async function getWikipediaExtract(title) {
   try {
     const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=extracts&exintro=1&explaintext=1&format=json&origin=*`;
@@ -69,7 +69,7 @@ async function getWikipediaExtract(title) {
   }
 }
 
-// ── Search Method 3: DuckDuckGo lite ─────────────────────────────────────────
+
 async function searchDDGLite(query, maxResults = 5) {
   try {
     const res = await fetch("https://lite.duckduckgo.com/lite/", {
@@ -102,7 +102,7 @@ async function searchDDGLite(query, maxResults = 5) {
   }
 }
 
-// ── Search Method 4: DuckDuckGo HTML ─────────────────────────────────────────
+
 async function searchDDGHTML(query, maxResults = 5) {
   try {
     const res = await fetch(
@@ -134,7 +134,7 @@ async function searchDDGHTML(query, maxResults = 5) {
   }
 }
 
-// ── Combined search ──────────────────────────────────────────────────────────
+
 async function gatherContext(query) {
   const [wikiSearch, ddgLite, ddgHTML] = await Promise.all([
     searchWikipedia(query, 3),
@@ -154,7 +154,7 @@ async function gatherContext(query) {
   return all;
 }
 
-// ── Main handler ─────────────────────────────────────────────────────────────
+
 export default async function handler(req) {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -171,7 +171,7 @@ export default async function handler(req) {
     });
   }
 
-  // Context gathering
+
   let contextBlock = "";
   try {
     const results = await gatherContext(message.trim());
@@ -193,7 +193,7 @@ export default async function handler(req) {
     { role: "user", content: message.trim() },
   ];
 
-  // ── Try providers (buffer full response → strip ads → stream to client) ────
+
   const endpoints = [
     { model: "openai", stream: true },
     { model: "mistral", stream: true },
@@ -217,7 +217,7 @@ export default async function handler(req) {
       if (!upstream.ok) continue;
 
       if (!ep.stream) {
-        // Non-streaming: parse JSON, strip ads, send as SSE
+
         const data = await upstream.json();
         let reply = data?.choices?.[0]?.message?.content || "";
         reply = stripAds(reply);
@@ -236,7 +236,7 @@ export default async function handler(req) {
         });
       }
 
-      // Streaming: buffer all chunks → strip ads → re-stream clean text
+
       const reader = upstream.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -262,7 +262,7 @@ export default async function handler(req) {
 
       if (!accumulated) continue;
 
-      // Strip ads and re-stream the clean response
+
       const cleanText = stripAds(accumulated);
       if (!cleanText) continue;
 

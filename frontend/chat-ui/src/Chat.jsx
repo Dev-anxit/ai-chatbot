@@ -8,7 +8,7 @@ import "./App.css";
 const STORAGE_KEY = "ehan_ai_messages";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-// Client-side safety net: strip any promotional text that slips through
+
 function stripAds(text) {
   return text
     .replace(/🌸.*?Pollinations.*?(?:\.|$)/gis, "")
@@ -35,7 +35,7 @@ function loadMessages() {
   }
 }
 
-// ── Code block with copy button ──────────────────────────────────────────────
+
 function CodeBlock({ language, children }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -67,7 +67,7 @@ function CodeBlock({ language, children }) {
   );
 }
 
-// ── Markdown renderer config ─────────────────────────────────────────────────
+
 const mdComponents = {
   code({ inline, className, children, ...props }) {
     const lang = /language-(\w+)/.exec(className || "")?.[1];
@@ -91,27 +91,27 @@ export default function Chat() {
   const abortRef        = useRef(null);
   const streamingIdRef  = useRef(null);
 
-  // Persist to sessionStorage
+
   useEffect(() => {
-    const toSave = messages.filter((m) => m.text); // skip empty streaming placeholders
+    const toSave = messages.filter((m) => m.text);
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   }, [messages]);
 
-  // Scroll to bottom
+
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [messages, loading]);
 
-  // Show/hide scroll-to-bottom button
+
   const handleScroll = () => {
     const el = messagesAreaRef.current;
     if (!el) return;
     setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 180);
   };
 
-  // Auto-resize textarea
+
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -119,7 +119,7 @@ export default function Chat() {
     ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
   }, [input]);
 
-  // Keyboard shortcut: Cmd/Ctrl + K → focus input
+
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -131,10 +131,10 @@ export default function Chat() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Auto-focus on mount
+
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
-  // ── Core send (streaming) ────────────────────────────────────────────────
+
   const sendMessage = useCallback(async (userText, addUserMsg = true) => {
     if (!userText?.trim() || isStreaming) return;
     const text = userText.trim();
@@ -155,8 +155,7 @@ export default function Chat() {
     abortRef.current = new AbortController();
 
     try {
-      // ── Build previous context ──
-      // filter out errors, ongoing streams, or system placeholders; limit to last 8 messages
+
       const historyMsg = messages
         .filter(m => !m.isError && m.text && !m.streaming)
         .slice(-8)
