@@ -8,7 +8,6 @@ import "./App.css";
 const STORAGE_KEY = "ehan_ai_messages";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-
 function stripAds(text) {
   return text
     .replace(/🌸.*?Pollinations.*?(?:\.|$)/gis, "")
@@ -34,7 +33,6 @@ function loadMessages() {
     return [];
   }
 }
-
 
 function CodeBlock({ language, children }) {
   const [copied, setCopied] = useState(false);
@@ -67,7 +65,6 @@ function CodeBlock({ language, children }) {
   );
 }
 
-
 const mdComponents = {
   code({ inline, className, children, ...props }) {
     const lang = /language-(\w+)/.exec(className || "")?.[1];
@@ -84,6 +81,8 @@ export default function Chat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [copiedMsgId, setCopiedMsgId]     = useState(null);
+  const [reactions, setReactions]         = useState({});
+  const [showClearModal, setShowClearModal] = useState(false);
 
   const messagesEndRef  = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -91,12 +90,10 @@ export default function Chat() {
   const abortRef        = useRef(null);
   const streamingIdRef  = useRef(null);
 
-
   useEffect(() => {
     const toSave = messages.filter((m) => m.text);
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   }, [messages]);
-
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
@@ -104,13 +101,11 @@ export default function Chat() {
 
   useEffect(() => { scrollToBottom(); }, [messages, loading]);
 
-
   const handleScroll = () => {
     const el = messagesAreaRef.current;
     if (!el) return;
     setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 180);
   };
-
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -119,21 +114,22 @@ export default function Chat() {
     ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
   }, [input]);
 
-
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         textareaRef.current?.focus();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === "l") {
+        e.preventDefault();
+        if (messages.length > 0) setShowClearModal(true);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
-
+  }, [messages.length]);
 
   useEffect(() => { textareaRef.current?.focus(); }, []);
-
 
   const sendMessage = useCallback(async (userText, addUserMsg = true) => {
     if (!userText?.trim() || isStreaming) return;
@@ -155,7 +151,6 @@ export default function Chat() {
     abortRef.current = new AbortController();
 
     try {
-
       const historyMsg = messages
         .filter(m => !m.isError && m.text && !m.streaming)
         .slice(-8)
@@ -235,7 +230,9 @@ export default function Chat() {
 
   const clearHistory = () => {
     setMessages([]);
+    setReactions({});
     sessionStorage.removeItem(STORAGE_KEY);
+    setShowClearModal(false);
   };
 
   const copyMessage = (id, text) => {
@@ -251,15 +248,59 @@ export default function Chat() {
     sendMessage(lastUser.text, false);
   };
 
+  const toggleReaction = (msgId, type) => {
+    setReactions((prev) => {
+      const current = prev[msgId];
+      if (current === type) {
+        const next = { ...prev };
+        delete next[msgId];
+        return next;
+      }
+      return { ...prev, [msgId]: type };
+    });
+  };
+
+  const exportChat = () => {
+    const text = messages
+      .map((m) => `[${formatTime(m.time)}] ${m.role === "user" ? "You" : "Ehan AI"}: ${m.text}`)
+      .join("\n\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ehan-ai-chat-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const isLastBotMessage = (m, i) =>
     m.role === "bot" && i === messages.length - 1;
+
+  const wordCount = input.trim() ? input.trim().split(/\s+/).length : 0;
 
   return (
     <div className="chat-wrapper">
       <NeuralBackground />
 
+      {showClearModal && (
+        <div className="modal-overlay" onClick={() => setShowClearModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <h3 className="modal-title">Clear conversation?</h3>
+            <p className="modal-desc">This will delete all messages in this chat. This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button className="modal-cancel" onClick={() => setShowClearModal(false)}>Cancel</button>
+              <button className="modal-confirm" onClick={clearHistory}>Clear All</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="chat-container">
-        {/* ── Header ── */}
         <div className="chat-header">
           <div className="header-left">
             <div className="ai-logo">
@@ -279,12 +320,18 @@ export default function Chat() {
           </div>
           <div className="header-actions">
             {messages.length > 0 && (
-              <button className="clear-btn" onClick={clearHistory} title="Clear chat  (or Ctrl+L)">New Chat</button>
+              <>
+                <button className="export-btn" onClick={exportChat} title="Export chat">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                <button className="clear-btn" onClick={() => setShowClearModal(true)} title="Clear chat (⌘L)">New Chat</button>
+              </>
             )}
           </div>
         </div>
 
-        {/* ── Messages ── */}
         <div className="chat-messages" ref={messagesAreaRef} onScroll={handleScroll}>
           {messages.length === 0 && !loading && (
             <div className="empty-state">
@@ -297,13 +344,13 @@ export default function Chat() {
                 </svg>
               </div>
               <h2 className="empty-title">How can I help you today?</h2>
-              <p className="empty-sub">Ask anything — code, math, writing, analysis.</p>
+              <p className="empty-sub">Ask anything — I search the web in real-time for the latest info.</p>
               <div className="feature-grid">
                 {[
-                  { icon: "⚡", title: "Fast answers", desc: "Instant replies with caching" },
-                  { icon: "🧠", title: "Deep reasoning", desc: "Explains complex topics clearly" },
-                  { icon: "💻", title: "Code generation", desc: "Any language with syntax highlight" },
-                  { icon: "📊", title: "Data analysis", desc: "Tables, math, structured output" },
+                  { icon: "🌐", title: "Real-time search", desc: "Live data from the web" },
+                  { icon: "🧠", title: "Deep reasoning", desc: "Step-by-step explanations" },
+                  { icon: "💻", title: "Code generation", desc: "Any language, syntax highlighted" },
+                  { icon: "💬", title: "Context aware", desc: "Remembers your conversation" },
                 ].map((f) => (
                   <div key={f.title} className="feature-card">
                     <span className="feature-icon">{f.icon}</span>
@@ -313,8 +360,13 @@ export default function Chat() {
                 ))}
               </div>
               <div className="suggestion-chips">
-                {["Explain quantum computing", "Write a Python script", "Debug my code"].map((s) => (
-                  <button key={s} className="chip" onClick={() => { setInput(s); textareaRef.current?.focus(); }}>
+                {[
+                  "Latest news today",
+                  "Write a Python script",
+                  "Explain quantum computing",
+                  "Current weather in Delhi",
+                ].map((s) => (
+                  <button key={s} className="chip" onClick={() => sendMessage(s)}>
                     {s}
                   </button>
                 ))}
@@ -345,7 +397,6 @@ export default function Chat() {
                   <span className="msg-time">{formatTime(m.time)}</span>
                 </div>
 
-                {/* Message action bar */}
                 {!m.streaming && m.text && (
                   <div className={`msg-actions ${m.role}`}>
                     <button
@@ -359,6 +410,30 @@ export default function Chat() {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="2"/></svg>
                       )}
                     </button>
+                    {m.role === "bot" && (
+                      <>
+                        <button
+                          className={`action-btn${reactions[m.id] === "up" ? " reacted" : ""}`}
+                          onClick={() => toggleReaction(m.id, "up")}
+                          title="Good response"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={reactions[m.id] === "up" ? "#22c55e" : "none"}>
+                            <path d="M7 22V11l3-8a2 2 0 014 0v3h5.5a2 2 0 012 2.3l-1.5 9A2 2 0 0118 19H7z" stroke={reactions[m.id] === "up" ? "#22c55e" : "currentColor"} strokeWidth="1.8" strokeLinejoin="round"/>
+                            <path d="M3 11h2v11H3a1 1 0 01-1-1V12a1 1 0 011-1z" stroke={reactions[m.id] === "up" ? "#22c55e" : "currentColor"} strokeWidth="1.8"/>
+                          </svg>
+                        </button>
+                        <button
+                          className={`action-btn${reactions[m.id] === "down" ? " reacted-bad" : ""}`}
+                          onClick={() => toggleReaction(m.id, "down")}
+                          title="Bad response"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={reactions[m.id] === "down" ? "#ef4444" : "none"}>
+                            <path d="M17 2v11l-3 8a2 2 0 01-4 0v-3H4.5a2 2 0 01-2-2.3l1.5-9A2 2 0 016 5h12z" stroke={reactions[m.id] === "down" ? "#ef4444" : "currentColor"} strokeWidth="1.8" strokeLinejoin="round"/>
+                            <path d="M21 13h-2V2h2a1 1 0 011 1v9a1 1 0 01-1 1z" stroke={reactions[m.id] === "down" ? "#ef4444" : "currentColor"} strokeWidth="1.8"/>
+                          </svg>
+                        </button>
+                      </>
+                    )}
                     {m.role === "bot" && isLastBotMessage(m, i) && !isStreaming && (
                       <button className="action-btn" onClick={regenerate} title="Regenerate response">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -370,7 +445,6 @@ export default function Chat() {
             </div>
           ))}
 
-          {/* Typing indicator — only show if no streaming bot message exists yet */}
           {loading && !messages.some((m) => m.streaming) && (
             <div className="msg-row bot">
               <div className="bot-avatar">
@@ -389,7 +463,6 @@ export default function Chat() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Scroll-to-bottom floating button */}
         {showScrollBtn && (
           <button className="scroll-btn" onClick={() => scrollToBottom()} title="Scroll to bottom">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -398,7 +471,6 @@ export default function Chat() {
           </button>
         )}
 
-        {/* ── Input ── */}
         <div className="chat-input-area">
           <div className="input-shell">
             <div className="scan-line" />
@@ -413,7 +485,7 @@ export default function Chat() {
               disabled={loading}
             />
             {input.length > 0 && (
-              <span className="char-count">{input.length}</span>
+              <span className="char-count">{wordCount}w</span>
             )}
             {isStreaming ? (
               <button className="stop-btn" onClick={stopGeneration} title="Stop generating">
@@ -435,7 +507,7 @@ export default function Chat() {
               </button>
             )}
           </div>
-          <p className="input-hint">Enter to send · Shift+Enter for new line · ⌘K to focus</p>
+          <p className="input-hint">Enter to send · Shift+Enter for new line · ⌘K to focus · ⌘L to clear</p>
         </div>
       </div>
     </div>
