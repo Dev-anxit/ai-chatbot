@@ -1594,3 +1594,82 @@
   transform: translateY(-2px);
   box-shadow: 0 5px 15px rgba(0, 212, 255, 0.3);
 }
+
+/* History Context Menu */
+.history-actions-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.history-menu-trigger {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.history-item-wrap:hover .history-menu-trigger,
+.history-item-wrap.active .history-menu-trigger {
+  opacity: 1;
+}
+
+.history-menu-trigger:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.history-context-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 200px;
+  background: rgba(28, 28, 38, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 6px;
+  z-index: 1000;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  margin-top: 4px;
+}
+
+.menu-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13.5px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.menu-opt:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.menu-opt.delete {
+  color: #ef4444;
+}
+
+.menu-opt.delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 0;
+}
+

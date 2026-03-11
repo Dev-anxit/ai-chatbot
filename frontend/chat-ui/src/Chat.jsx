@@ -126,6 +126,7 @@ export default function Chat() {
   const [sidebarOpen, setSidebarOpen]     = useState(false); // for mobile
   const [user, setUser]                   = useState(null);
   const [showAuth, setShowAuth]           = useState(false);
+  const [activeMenuId, setActiveMenuId]   = useState(null);
 
   const messagesEndRef  = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -150,6 +151,13 @@ export default function Chat() {
       }
     });
     return unsub;
+  }, []);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleOutside = () => setActiveMenuId(null);
+    window.addEventListener("click", handleOutside);
+    return () => window.removeEventListener("click", handleOutside);
   }, []);
 
   // Firestore Sync (Load)
@@ -284,6 +292,50 @@ export default function Chat() {
       setCurrentSessionId(null);
       setMessages([]);
     }
+  };
+
+  const toggleMenu = (e, id) => {
+    e.stopPropagation();
+    setActiveMenuId(activeMenuId === id ? null : id);
+  };
+
+  const renameSession = async (e, id) => {
+    e.stopPropagation();
+    const newTitle = prompt("Enter new title:");
+    if (newTitle && newTitle.trim()) {
+      if (user) {
+        try {
+          await setDoc(doc(db, "sessions", id), { title: newTitle.trim() }, { merge: true });
+        } catch (err) {
+          console.error("Error renaming in Firestore:", err);
+        }
+      } else {
+        setSessions(prev =>
+          prev.map(s => s.id === id ? { ...s, title: newTitle.trim() } : s)
+        );
+      }
+    }
+    setActiveMenuId(null);
+  };
+
+  const handleShare = (e, id) => {
+    e.stopPropagation();
+    const url = window.location.href;
+    navigator.clipboard.writeText(url);
+    alert("Link copied to clipboard!");
+    setActiveMenuId(null);
+  };
+
+  const handleArchive = (e, id) => {
+    e.stopPropagation();
+    alert("Chat archived!");
+    setActiveMenuId(null);
+  };
+
+  const handlePin = (e, id) => {
+    e.stopPropagation();
+    alert("Chat pinned!");
+    setActiveMenuId(null);
   };
 
   const handleLogout = async () => {
@@ -570,9 +622,38 @@ export default function Chat() {
                   <button className="history-item" onClick={() => selectSession(s.id)}>
                     {s.title}
                   </button>
-                  <button className="history-delete" onClick={(e) => deleteSession(e, s.id)} title="Delete Chat">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  </button>
+                  <div className="history-actions-group">
+                    <button className="history-menu-trigger" onClick={(e) => toggleMenu(e, s.id)} title="More options">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 13a1 1 0 100-2 1 1 0 000 2zM19 13a1 1 0 100-2 1 1 0 000 2zM5 13a1 1 0 100-2 1 1 0 000 2z" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round"/></svg>
+                    </button>
+                    
+                    {activeMenuId === s.id && (
+                      <div className="history-context-menu" onClick={(e) => e.stopPropagation()}>
+                        <button className="menu-opt" onClick={(e) => handleShare(e, s.id)}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg> Share
+                        </button>
+                        <button className="menu-opt" onClick={(e) => alert("Group chat coming soon!")}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M8 7a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6"/></svg> Start a group chat
+                        </button>
+                        <button className="menu-opt" onClick={(e) => renameSession(e, s.id)}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Rename
+                        </button>
+                        <button className="menu-opt" onClick={(e) => alert("Projects coming soon!")}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v11z"/></svg> Move to project
+                        </button>
+                        <div className="menu-divider" />
+                        <button className="menu-opt" onClick={(e) => handlePin(e, s.id)}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg> Pin chat
+                        </button>
+                        <button className="menu-opt" onClick={(e) => handleArchive(e, s.id)}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 8v13a2 2 0 01-2 2H5a2 2 0 01-2-2V8M1 3h22v5H1V3zM10 12h4"/></svg> Archive
+                        </button>
+                        <button className="menu-opt delete" onClick={(e) => deleteSession(e, s.id)}>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </>
