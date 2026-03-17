@@ -2,8 +2,8 @@
   "name": "ai-chatbot-monorepo",
   "private": true,
   "scripts": {
-    "build": "cd frontend/chat-ui && npm install && npm run build",
-    "install": "cd frontend/chat-ui && npm install",
+    "build": "[ -d frontend/chat-ui ] && cd frontend/chat-ui && npm install && npm run build || npm run build",
+    "install": "[ -d frontend/chat-ui ] && cd frontend/chat-ui && npm install || npm install",
     "start": "cd frontend/chat-ui && npm run dev"
   }
 }

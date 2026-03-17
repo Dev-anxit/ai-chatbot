@@ -1,36 +1,57 @@
-from fastapi import FastAPI
+import os
+import re
+import json
+import hashlib
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, List, Dict, Optional, Any
+
+import httpx
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from g4f.client import AsyncClient
-from g4f.Provider import PollinationsAI
-import g4f
-import os
-import re
-import hashlib
-import asyncio
-import threading
-import json
 from dotenv import load_dotenv
-import logging
-from contextlib import asynccontextmanager
+
+# Lazy imports with type safety for linters
+httpx: Any = None
+try:
+    import httpx
+except ImportError:
+    pass
+
+AsyncGroq: Any = None
+try:
+    from groq import AsyncGroq
+except ImportError:
+    pass
+
+G4FClient: Any = None
+try:
+    from g4f.client import AsyncClient as G4FClient
+except ImportError:
+    pass
 
 from rag.scheduler import start_scheduler
 from rag.orchestrator import gather_context_for_query
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 @asynccontextmanager
-async def lifespan(application):
+async def lifespan(application: FastAPI):
+    # Initialize background tasks
     start_scheduler()
     logger.info("Background RAG Scheduler started.")
     yield
 
 app = FastAPI(lifespan=lifespan)
 
+# Enhanced CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,55 +60,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_cache: dict[str, str] = {}
+# Simple in-memory cache
+_cache: Dict[str, str] = {}
 
 SYSTEM_PROMPT = (
-    "You are Ehan AI — a world-class, professional AI assistant. "
-    "You provide accurate, well-researched, and beautifully formatted responses. "
+    "You are Ehan AI — a friendly and highly intelligent AI. "
+    "MANDATORY FORMATTING: "
+    "1. Start with `<thought>`: Briefly plan the answer (1-2 sentences for simple chat, more for research). "
+    "2. End logic with `</thought>`. "
+    "3. Provide final answer AFTER the tag. "
     "Rules: "
-    "1. For simple questions, give brief direct answers. "
-    "2. For complex topics, explain step by step with examples. "
-    "3. Use markdown formatting (bold, lists, code blocks, tables) to make responses clear and scannable. "
-    "4. Never make up facts. If unsure, say so. "
-    "5. NEVER include any promotional text, advertisements, watermarks, or third-party attributions in your response. "
-    "6. Do NOT mention any AI provider, API service, or platform name in your response. "
-    "7. You will receive real-time data (weather, search results, date/time) in the context. "
-    "You MUST use ONLY the information from those results to answer questions about current events, weather, temperature, sports, news, and anything time-sensitive. "
-    "Your training data is outdated. The provided context is ALWAYS correct and overrides your training data. "
-    "DO NOT guess or use your training data for recent events. ONLY use the provided context. "
-    "8. When weather data is provided, present it clearly with temperature, conditions, humidity, wind, etc. Use emoji for weather conditions. "
-    "9. IMPORTANT — ASK FOR MISSING INFORMATION: "
-    "If the user asks something that requires specific details you do not have, you MUST ask a polite clarifying question BEFORE answering. "
-    "10. FORMATTING FOR HUMANS: "
-    "Make your responses extremely easy to read. "
-    "- Use plenty of white space between sections. "
-    "- Break long paragraphs into smaller ones (max 2-3 sentences). "
-    "- Use **Bold** text for key terms, names, and important dates. "
-    "- For updates or news, ALWAYS prefer Bullet Points with bold headers. "
-    "- Avoid raw HTML tags. Use clean Markdown only. "
-    "11. Examples of clarifying questions: "
-    "- If they ask 'what is the temperature?' without a city, ask 'Which city or location would you like the weather for?' "
-    "- If they ask 'translate this' without text, ask 'What text would you like me to translate, and to which language?' "
-    "- If they ask about a person with a common name, ask for clarification (e.g. 'Do you mean X the actor or X the cricketer?'). "
-    "- If they ask 'book a flight', politely say what you can help with instead. "
-    "Do NOT guess or assume missing details. Always ask first, then answer accurately once you have the info."
+    "- If the user says 'hi', 'hello', or greets you, respond NATURALLY and briefly. Don't be over-formal. "
+    "- For research/data questions, use the REAL-TIME CONTEXT provided. "
+    "- Use Markdown, tables, and bold text for complex info only. "
+    "- Be concise. Answer the SPECIFIC question asked."
 )
-
-SSE_HEADERS = {
-    "Cache-Control": "no-cache",
-    "X-Accel-Buffering": "no",
-    "Connection": "keep-alive",
-}
 
 AD_PATTERNS = [
     r"🌸.*?Pollinations.*?(?:\.|$)",
     r"\*\*Support Pollinations.*?$",
     r"Support Pollinations.*?$",
     r"Powered by Pollinations.*?$",
-    r"---\s*\n.*?Pollinations.*?$",
-    r"\n+\s*\*?\s*(?:Ad|Advertisement)\s*\*?\s*\n.*$",
     r"\[.*?pollinations.*?\].*$",
-    r"<.*?pollinations.*?>.*$",
 ]
 
 def strip_ads(text: str) -> str:
@@ -95,228 +89,157 @@ def strip_ads(text: str) -> str:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
     return text.rstrip()
 
-
 class ChatMessage(BaseModel):
     role: str
     content: str
 
 class ChatRequest(BaseModel):
     message: str
-    history: list[ChatMessage] = []
+    history: List[ChatMessage] = []
 
 class ChatResponse(BaseModel):
     reply: str
 
-
 @app.get("/")
 def read_root():
-    return {"message": "Ehan AI API is running"}
-
+    return {"message": "Ehan AI API is running", "status": "online"}
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
     user_msg = req.message.strip()
     cache_key = hashlib.md5(user_msg.lower().encode()).hexdigest()
 
+    # Return cached response if exists
     if cache_key in _cache:
-        async def cached_gen():
-            text = _cache[cache_key]
-            words = text.split(" ")
-            for i, w in enumerate(words):
-                chunk = w + (" " if i < len(words) - 1 else "")
+        async def cached_gen() -> AsyncGenerator[str, None]:
+            content: str = _cache[cache_key]
+            chunk_size = 20
+            for i in range(0, len(content), chunk_size):
+                chunk = content[i : i + chunk_size]
                 yield f"data: {json.dumps({'delta': chunk})}\n\n"
-                await asyncio.sleep(0.006)
+                await asyncio.sleep(0.01)
             yield "data: [DONE]\n\n"
-        return StreamingResponse(cached_gen(), media_type="text/event-stream", headers=SSE_HEADERS)
+        return StreamingResponse(cached_gen(), media_type="text/event-stream")
 
-    real_time_context = gather_context_for_query(user_msg)
-    dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
-
-    messages_payload = [{"role": h.role, "content": h.content} for h in req.history]
+    # Gather context asynchronously
+    real_time_context = await gather_context_for_query(user_msg)
+    
+    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT + f"\n\nCONTEXT:\n{real_time_context}"}]
+    # Fix: Ensure history slicing is handled correctly for the payload
+    hist_slice = req.history[-6:] if len(req.history) > 6 else req.history
+    for h in hist_slice:
+        messages_payload.append({
+            "role": h.role if h.role != "bot" else "assistant", 
+            "content": h.content
+        })
     messages_payload.append({"role": "user", "content": user_msg})
 
-    async def generate():
-        full: list[str] = []
-
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-        anthropic_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
-
-        if anthropic_key:
+    async def generate() -> AsyncGenerator[str, None]:
+        full_text: List[str] = []
+        openai_key = os.getenv("OPENAI_API_KEY")
+        
+        logger.info(f"Generating response: {user_msg[:50]}...")
+        
+        if openai_key and httpx:
             try:
-                q: asyncio.Queue = asyncio.Queue()
-                loop = asyncio.get_event_loop()
-                DONE = object()
+                # Use Any to satisfy linters without the full lib environment
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    async with client.stream(
+                        "POST",
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {openai_key}"},
+                        json={
+                            "model": "gpt-4o-mini",
+                            "messages": messages_payload,
+                            "stream": True,
+                            "max_tokens": 1024,
+                            "temperature": 0.7
+                        }
+                    ) as response:
+                        if response.status_code == 200:
+                            async for line in response.aiter_lines():
+                                if not line or not line.startswith("data: "):
+                                    continue
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk_json = json.loads(data_str)
+                                    delta = chunk_json["choices"][0]["delta"].get("content", "")
+                                    if delta:
+                                        full_text.append(delta)
+                                        yield f"data: {json.dumps({'delta': delta})}\n\n"
+                                except Exception:
+                                    continue
+                            
+                            if full_text:
+                                _cache[cache_key] = "".join(full_text)
+                                yield "data: [DONE]\n\n"
+                                return
+                        else:
+                            logger.error(f"OpenAI error {response.status_code}")
+            except Exception as e:
+                logger.error(f"OpenAI failure: {e}")
 
-                def _worker():
-                    try:
-                        import anthropic as _a
-                        kw = {"api_key": anthropic_key}
-                        if anthropic_url:
-                            kw["base_url"] = anthropic_url
-                        c = _a.Anthropic(**kw)
-                        with c.messages.stream(
-                            model="claude-haiku-4-5",
-                            max_tokens=1024,
-                            system=dynamic_system_prompt,
-                            messages=messages_payload,
-                        ) as s:
-                            for text in s.text_stream:
-                                asyncio.run_coroutine_threadsafe(q.put(text), loop)
-                    except Exception:
-                        pass
-                    finally:
-                        asyncio.run_coroutine_threadsafe(q.put(DONE), loop)
-
-                threading.Thread(target=_worker, daemon=True).start()
-
-                while True:
-                    chunk = await q.get()
-                    if chunk is DONE:
-                        break
-                    full.append(chunk)
-                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
-
-                if full:
-                    cleaned = strip_ads("".join(full))
-                    _cache[cache_key] = cleaned
+        # 2. High-Speed Fallback: Groq
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key and AsyncGroq:
+            logger.info("Using Groq fallback...")
+            try:
+                g_client = AsyncGroq(api_key=groq_key)
+                g_stream = await g_client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=messages_payload, # type: ignore
+                    stream=True,
+                    max_tokens=1024
+                )
+                async for chunk in g_stream:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        full_text.append(content)
+                        yield f"data: {json.dumps({'delta': content})}\n\n"
+                
+                if full_text:
+                    _cache[cache_key] = "".join(full_text)
                     yield "data: [DONE]\n\n"
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Groq failure: {e}")
 
-        try:
-            client = AsyncClient(provider=PollinationsAI)
-            stream = client.chat.completions.create(
-                model="openai-fast",
-                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
-                stream=True,
-            )
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    full.append(delta)
-            if full:
-                cleaned = strip_ads("".join(full))
-                _cache[cache_key] = cleaned
-                words = cleaned.split(" ")
-                for i, w in enumerate(words):
-                    chunk = w + (" " if i < len(words) - 1 else "")
-                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-        except Exception as e:
-            logger.error(f"PollinationsAI fallback failed: {type(e).__name__}: {e}")
+        # 3. Community Fallback: G4F
+        if G4FClient:
+            logger.info("Using G4F last resort...")
+            try:
+                g4f_client = G4FClient()
+                g4f_res = g4f_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages_payload, # type: ignore
+                    stream=True
+                )
+                async for chunk in g4f_res:
+                    content = getattr(chunk.choices[0].delta, 'content', None)
+                    if content:
+                        full_text.append(content)
+                        yield f"data: {json.dumps({'delta': content})}\n\n"
+                
+                if full_text:
+                    _cache[cache_key] = "".join(full_text)
+                    yield "data: [DONE]\n\n"
+                    return
+            except Exception as e:
+                logger.error(f"G4F failure: {e}")
 
-        try:
-            client = AsyncClient()
-            stream = client.chat.completions.create(
-                model="",
-                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
-                stream=True,
-            )
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    full.append(delta)
-            if full:
-                cleaned = strip_ads("".join(full))
-                _cache[cache_key] = cleaned
-                words = cleaned.split(" ")
-                for i, w in enumerate(words):
-                    chunk = w + (" " if i < len(words) - 1 else "")
-                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-        except Exception as e:
-            logger.error(f"g4f auto-provider fallback failed: {type(e).__name__}: {e}")
-
-        yield f"data: {json.dumps({'delta': 'Sorry, I could not get a response. Please try again.'})}\n\n"
+        error_msg = "My neural links are saturated. Please try in a moment!"
+        yield f"data: {json.dumps({'delta': error_msg})}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream", headers=SSE_HEADERS)
-
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    user_msg = req.message.strip()
-    cache_key = hashlib.md5(user_msg.lower().encode()).hexdigest()
-    if cache_key in _cache:
-        return ChatResponse(reply=_cache[cache_key])
-
-    real_time_context = gather_context_for_query(user_msg)
-    dynamic_system_prompt = SYSTEM_PROMPT + f"\n\nHere is dynamic real-time context to answer the user's query accurately:\n{real_time_context}"
-
-    messages_payload = [{"role": h.role, "content": h.content} for h in req.history]
-    messages_payload.append({"role": "user", "content": user_msg})
-
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    anthropic_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
-    if anthropic_key:
-        try:
-            def _call():
-                import anthropic as _a
-                kw = {"api_key": anthropic_key}
-                if anthropic_url:
-                    kw["base_url"] = anthropic_url
-                c = _a.Anthropic(**kw)
-                with c.messages.stream(
-                    model="claude-haiku-4-5",
-                    max_tokens=1024,
-                    system=dynamic_system_prompt,
-                    messages=messages_payload,
-                ) as s:
-                    full = s.get_final_message()
-                return next((b.text for b in full.content if hasattr(b, "text")), "")
-            reply = await asyncio.to_thread(_call)
-            if reply:
-                cleaned = strip_ads(reply)
-                _cache[cache_key] = cleaned
-                return ChatResponse(reply=cleaned)
-        except Exception:
-            pass
-
-    try:
-        client = AsyncClient(provider=PollinationsAI)
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model="openai-fast",
-                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
-            ),
-            timeout=45,
-        )
-        reply = response.choices[0].message.content.strip()
-        if reply:
-            cleaned = strip_ads(reply)
-            _cache[cache_key] = cleaned
-            return ChatResponse(reply=cleaned)
-    except Exception:
-        pass
-
-    try:
-        client = AsyncClient()
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model="",
-                messages=[{"role": "system", "content": dynamic_system_prompt}, *messages_payload],
-            ),
-            timeout=30,
-        )
-        reply = response.choices[0].message.content.strip()
-        if reply:
-            cleaned = strip_ads(reply)
-            _cache[cache_key] = cleaned
-            return ChatResponse(reply=cleaned)
-    except Exception:
-        pass
-
-    return ChatResponse(reply="Sorry, I could not get a response. Please try again.")
-
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
-
+    import datetime
+    return {"status": "ok", "time": datetime.datetime.now().isoformat()}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

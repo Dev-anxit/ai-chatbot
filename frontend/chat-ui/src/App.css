@@ -233,24 +233,6 @@
   gap: 13px;
 }
 
-.ai-logo {
-  width: 42px;
-  height: 42px;
-  background: linear-gradient(135deg, #00c6ff, #7c3aed);
-  border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  animation: logoPulse 3.5s ease-in-out infinite;
-  box-shadow: 0 0 22px rgba(0, 212, 255, 0.28);
-}
-
-@keyframes logoPulse {
-  0%, 100% { box-shadow: 0 0 22px rgba(0, 212, 255, 0.28); }
-  50%       { box-shadow: 0 0 38px rgba(0, 212, 255, 0.55), 0 0 70px rgba(124, 58, 237, 0.18); }
-}
-
 .header-title {
   font-size: 19px;
   font-weight: 700;
@@ -260,11 +242,11 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 5s linear infinite;
+  animation: shimmerTitle 5s linear infinite;
   letter-spacing: -0.3px;
 }
 
-@keyframes shimmer {
+@keyframes shimmerTitle {
   0%   { background-position: 0%   center; }
   100% { background-position: 200% center; }
 }
@@ -431,35 +413,169 @@
   box-shadow: 0 4px 16px rgba(0, 212, 255, 0.15);
 }
 
+/* ---------- Skeleton / Shimmer Effect ---------- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.04),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.neural-glow {
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.4), 0 0 30px rgba(124, 58, 237, 0.2);
+  transition: box-shadow 0.3s ease;
+}
+
+.neural-glow:hover {
+  box-shadow: 0 0 25px rgba(0, 212, 255, 0.6), 0 0 50px rgba(124, 58, 237, 0.4);
+}
+
+.neural-pulse {
+  animation: neuralPulseAnim 2.5s ease-in-out infinite;
+  background: linear-gradient(90deg, rgba(6, 6, 18, 0.8), rgba(20, 20, 40, 0.9), rgba(6, 6, 18, 0.8));
+  background-size: 200% 100%;
+}
+
+@keyframes neuralPulseAnim {
+  0%, 100% { 
+    opacity: 0.8; 
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.05);
+  }
+  50% { 
+    opacity: 1; 
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.15), 0 0 40px rgba(124, 58, 237, 0.1);
+  }
+}
+
+/* ---------- Thought / Reasoning Block ---------- */
+.thought-container {
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid rgba(0, 212, 255, 0.4);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  position: relative;
+  overflow: hidden;
+}
+
+.thought-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: rgba(0, 212, 255, 0.8);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.thought-header.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.thought-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.thought-toggle-icon {
+  background: rgba(0, 212, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  transition: background 0.2s;
+}
+
+.thought-header:hover .thought-toggle-icon {
+  background: rgba(0, 212, 255, 0.2);
+}
+
+.thought-content {
+  line-height: 1.6;
+  font-style: italic;
+  white-space: pre-wrap;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.thought-pulse {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+  animation: neuralPulseAnim 3s linear infinite;
+}
+
+/* ---------- AI Logo Pulsing ---------- */
+.ai-logo {
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(135deg, #00c6ff, #7c3aed);
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: logoPulse 3.5s ease-in-out infinite;
+  box-shadow: 0 0 22px rgba(0, 212, 255, 0.28);
+}
+
+@keyframes logoPulse {
+  0%, 100% { box-shadow: 0 0 22px rgba(0, 212, 255, 0.28); }
+  50%       { box-shadow: 0 0 45px rgba(0, 212, 255, 0.55), 0 0 90px rgba(124, 58, 237, 0.25); }
+}
+
 /* ---------- Message Rows ---------- */
 .msg-row {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  animation-duration: 0.38s;
-  animation-fill-mode: both;
-  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+  gap: 12px;
+  margin-bottom: 20px;
+  opacity: 0;
+  animation: messageSlideIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .msg-row.user {
   justify-content: flex-end;
-  animation-name: slideInRight;
 }
 
 .msg-row.bot {
   justify-content: flex-start;
-  animation-name: slideInLeft;
 }
 
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(28px) scale(0.92); }
-  to   { opacity: 1; transform: translateX(0)    scale(1); }
+@keyframes messageSlideIn {
+  from { opacity: 0; transform: translateY(15px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-@keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-28px) scale(0.92); }
-  to   { opacity: 1; transform: translateX(0)     scale(1); }
-}
 
 /* ---------- Bot Avatar ---------- */
 .bot-avatar {

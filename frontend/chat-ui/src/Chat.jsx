@@ -35,6 +35,28 @@ function stripAds(text) {
     .trimEnd();
 }
 
+function parseReasoning(text) {
+  if (!text) return { thought: null, answer: "" };
+  
+  // Handle streaming: check for start tag
+  const thoughtStart = text.indexOf("<thought>");
+  if (thoughtStart !== -1) {
+    const thoughtEnd = text.indexOf("</thought>");
+    if (thoughtEnd !== -1) {
+      // Complete thought found
+      const thought = text.substring(thoughtStart + 9, thoughtEnd).trim();
+      const answer = text.substring(thoughtEnd + 10).trim();
+      return { thought, answer };
+    } else {
+      // Thought started but not finished
+      const thought = text.substring(thoughtStart + 9).trim();
+      return { thought, answer: "" };
+    }
+  }
+  
+  return { thought: null, answer: text };
+}
+
 function formatTime(date) {
   return date?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -132,7 +154,12 @@ export default function Chat() {
   const [showGPTsModal, setShowGPTsModal] = useState(false);
   const [searchTerm, setSearchTerm]       = useState("");
   const [showSearch, setShowSearch]       = useState(false);
+  const [expandedThoughts, setExpandedThoughts] = useState({});
   const [persona, setPersona]             = useState("Ehan AI");
+
+  const toggleThought = (msgId) => {
+    setExpandedThoughts(prev => ({ ...prev, [msgId]: !prev[msgId] }));
+  };
 
   const messagesEndRef  = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -813,30 +840,73 @@ export default function Chat() {
             )}
 
             {messages.map((m, i) => (
-              <div key={m.id ?? i} className={`msg-row ${m.role}`}>
+              <div key={m.id ?? i} className={`msg-row ${m.role} ${m.isError ? "has-error" : ""}`}>
                 {m.role === "bot" && (
-                  <div className="bot-avatar">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-                      <path d="M2 17L12 22L22 17" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-                      <path d="M2 12L12 17L22 12" stroke="white" strokeWidth="2" strokeLinejoin="round" />
+                  <div className="bot-avatar neural-glow">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2Z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.3"/>
+                      <path d="M12 11V13" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 9V15M16 9V15" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M12 7V8M12 16V17" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M4 12H5M19 12H20" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <circle cx="12" cy="12" r="1.5" fill="white" className="brain-core">
+                        <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
+                      </circle>
                     </svg>
                   </div>
                 )}
+                
                 <div className="msg-col">
                   <div className={`msg-bubble ${m.role}${m.isError ? " error" : ""}`}>
-                    {m.streaming ? (
+                    {m.streaming && !m.text ? (
                       <div className="typing-dot-wrap"><span /><span /><span /></div>
                     ) : (
-                      <div className="msg-body">
-                        <ReactMarkdown 
-                          components={mdComponents} 
-                          remarkPlugins={[remarkGfm]}
-                        >
-                          {m.text}
-                        </ReactMarkdown>
-                      </div>
+                      <>
+                        {(() => {
+                          const { thought, answer } = parseReasoning(m.text);
+                          return (
+                            <>
+                              {thought && (
+                                <div className="thought-container">
+                                  <div className="thought-pulse" />
+                                  <div 
+                                    className="thought-header clickable" 
+                                    onClick={() => toggleThought(m.id || i)}
+                                  >
+                                    <div className="thought-header-left">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M12 2L2 7L12 12L22 7L12 2Z" />
+                                        <path d="M2 17L12 22L22 17" />
+                                        <path d="M2 12L12 17L22 12" />
+                                      </svg>
+                                      Reasoning Process
+                                    </div>
+                                    <span className="thought-toggle-icon">
+                                      {expandedThoughts[m.id || i] ? "Hide" : "Show Details"}
+                                    </span>
+                                  </div>
+                                  {expandedThoughts[m.id || i] && (
+                                    <div className="thought-content">{thought}</div>
+                                  )}
+                                </div>
+                              )}
+                              {answer && (
+                                <ReactMarkdown 
+                                  remarkPlugins={[remarkGfm]} 
+                                  components={mdComponents}
+                                >
+                                  {answer}
+                                </ReactMarkdown>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </>
                     )}
+                  </div>
+
+                  <div className="msg-info">
+                    <span className="msg-author">{m.role === "user" ? "You" : persona}</span>
                     <span className="msg-time">{formatTime(m.time)}</span>
                   </div>
 
@@ -901,14 +971,15 @@ export default function Chat() {
 
             {loading && !messages.some((m) => m.streaming) && (
               <div className="msg-row bot">
-                <div className="bot-avatar">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-                    <path d="M2 17L12 22L22 17" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-                    <path d="M2 12L12 17L22 12" stroke="white" strokeWidth="2" strokeLinejoin="round" />
+                <div className="bot-avatar neural-glow">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2Z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.3"/>
+                    <circle cx="12" cy="12" r="1.5" fill="white" className="brain-core">
+                      <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
+                    </circle>
                   </svg>
                 </div>
-                <div className="msg-bubble bot">
+                <div className="msg-bubble bot skeleton neural-pulse" style={{ width: '180px', height: '42px' }}>
                   <div className="typing-dot-wrap"><span /><span /><span /></div>
                 </div>
               </div>

@@ -308,7 +308,18 @@ export default async function handler(req) {
     });
   }
 
-  const { message, history } = await req.json();
+  let message, history;
+  try {
+    const body = await req.json();
+    message = body.message;
+    history = body.history;
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   if (!message?.trim()) {
     return new Response(JSON.stringify({ error: "Message is required" }), {
       status: 400,
@@ -361,7 +372,7 @@ export default async function handler(req) {
           }),
         }
       );
-      if (!upstream.ok) continue;
+      if (!upstream.ok || !upstream.body) continue;
 
       if (!ep.stream) {
         const data = await upstream.json();

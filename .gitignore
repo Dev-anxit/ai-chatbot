@@ -4,6 +4,8 @@ venv/
 venv_new/
 backend/venv/
 backend/venv_new/
+backend/venv_312/
+venv_312/
 backend/__pycache__/
 **/__pycache__/
 *.pyc
