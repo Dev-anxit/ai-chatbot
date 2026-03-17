@@ -76,6 +76,14 @@ SYSTEM_PROMPT = (
     "- Be concise. Answer the SPECIFIC question asked."
 )
 
+GREETING_PATTERNS = [
+    r"^(hi|hello|hey|hola|hii|heyy+|gm|gn|good (morning|evening|night|afternoon)|how are you|how's it going|what's up|wassup|who are you|tell me about yourself|hi there|hello there)",
+]
+
+def is_greeting(query: str) -> bool:
+    lower = query.lower().strip()
+    return any(re.match(p, lower) for p in GREETING_PATTERNS) or len(lower.split()) <= 1
+
 AD_PATTERNS = [
     r"🌸.*?Pollinations.*?(?:\.|$)",
     r"\*\*Support Pollinations.*?$",
@@ -120,6 +128,17 @@ async def chat_stream(req: ChatRequest):
                 await asyncio.sleep(0.01)
             yield "data: [DONE]\n\n"
         return StreamingResponse(cached_gen(), media_type="text/event-stream")
+
+    # ⚡ ULTRA-FAST PATH: Skip EVERYTHING for simple greetings
+    if is_greeting(user_msg):
+        logger.info(f"Fast path triggered for greeting: {user_msg}")
+        async def fast_gen() -> AsyncGenerator[str, None]:
+            # No context, no <thought> required for fast path
+            msg = "Hello! How can I assist you today?" if "how are you" not in user_msg.lower() else "I'm doing great, thank you! How can I help you today?"
+            # Add a tiny delay to simulate 'thinking' but keep it sub-500ms
+            yield f"data: {json.dumps({'delta': msg})}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(fast_gen(), media_type="text/event-stream")
 
     # Gather context asynchronously
     real_time_context = await gather_context_for_query(user_msg)

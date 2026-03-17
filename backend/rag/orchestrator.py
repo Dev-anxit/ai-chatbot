@@ -1,8 +1,11 @@
 import asyncio
 import httpx
 import re
+import logging
 from datetime import datetime
 from typing import List, Optional, Any, Coroutine
+
+logger = logging.getLogger(__name__)
 
 from .search import get_web_search_results
 from .vector_db import db_instance
@@ -16,7 +19,7 @@ WEATHER_KEYWORDS = [
 async def get_weather_async(location: str) -> Optional[str]:
     try:
         url = f"https://wttr.in/{httpx.utils.quote(location)}?format=j1"
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=3.5) as client:
             res = await client.get(url, headers={"User-Agent": "curl/7.68.0"})
             if res.status_code != 200:
                 return None
@@ -89,17 +92,24 @@ async def gather_context_for_query(query: str) -> str:
     async def _vector_task() -> Optional[str]:
         if not needs_search: return None
         try:
-            # Avoid lambda to satisfy some linters
-            res = db_instance.search(query, k=2)
-            return "\n".join([f"- {d.page_content}" for d in res])
+            # Move synchronous search to thread to prevent blocking the event loop
+            def sync_search():
+                res = db_instance.search(query, k=2)
+                return "\n".join([f"- {d.page_content}" for d in res])
+            return await asyncio.to_thread(sync_search)
         except Exception:
             return None
 
     async def _web_task() -> Optional[str]:
         if not needs_search: return None
         try:
-            return await asyncio.to_thread(get_web_search_results, query, 3)
-        except Exception:
+            # Set a strict timeout for web search to prevent long hangs
+            return await asyncio.wait_for(
+                asyncio.to_thread(get_web_search_results, query, 3),
+                timeout=3.5
+            )
+        except (asyncio.TimeoutError, Exception):
+            logger.warning(f"Web search timed out or failed for: {query}")
             return None
 
     # Run all three tasks
