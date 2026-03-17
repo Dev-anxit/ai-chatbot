@@ -12,6 +12,15 @@ const SYSTEM_PROMPT =
   "3. Format complex data with Markdown tables, bold text, and lists. " +
   "4. Never include ads or AI provider names. ";
 
+const GREETING_PATTERNS = [
+  /^(hi|hello|hey|hola|hii|heyy+|gm|gn|good (morning|evening|night|afternoon)|how are you|how's it going|what's up|wassup|who are you|tell me about yourself|hi there|hello there)/i,
+];
+
+function isGreeting(query) {
+  const lower = query.toLowerCase().trim();
+  return GREETING_PATTERNS.some((p) => p.test(lower)) || lower.split(/\s+/).length <= 1;
+}
+
 function stripAds(text) {
   const patterns = [
     /🌸.*?Pollinations.*?(?:\.|$)/gis,
@@ -307,6 +316,18 @@ export default async function handler(req) {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // ⚡ ULTRA-FAST PATH: Skip context for greetings
+  if (isGreeting(message)) {
+    const reply = message.toLowerCase().includes("how are you") 
+      ? "I'm doing great, thank you! How can I help you today?" 
+      : "Hello! How can I assist you today?";
+    const encoder = new TextEncoder();
+    return new Response(
+      encoder.encode(`data: ${JSON.stringify({ delta: reply })}\n\ndata: [DONE]\n\n`),
+      { headers: { "Content-Type": "text/event-stream" } }
+    );
   }
 
   const now = new Date();
