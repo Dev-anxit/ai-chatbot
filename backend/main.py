@@ -4,6 +4,7 @@ import json
 import hashlib
 import asyncio
 import logging
+from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, List, Dict, Optional, Any
 
@@ -21,17 +22,15 @@ try:
 except ImportError:
     pass
 
-AsyncGroq: Any = None
 try:
     from groq import AsyncGroq
 except ImportError:
-    pass
+    AsyncGroq = None
 
-G4FClient: Any = None
 try:
     from g4f.client import AsyncClient as G4FClient
 except ImportError:
-    pass
+    G4FClient = None
 
 from rag.scheduler import start_scheduler
 from rag.orchestrator import gather_context_for_query
@@ -64,16 +63,19 @@ app.add_middleware(
 _cache: Dict[str, str] = {}
 
 SYSTEM_PROMPT = (
-    "You are Ehan AI — a friendly and highly intelligent AI. "
+    f"You are Ehan AI — a friendly and highly intelligent AI. "
+    f"CURRENT DATE: {datetime.now().strftime('%B %d, %Y')}. "
     "MANDATORY FORMATTING: "
-    "1. Start with `<thought>`: Briefly plan the answer (1-2 sentences for simple chat, more for research). "
+    "1. Start with `<thought>`: Briefly plan the answer. "
     "2. End logic with `</thought>`. "
     "3. Provide final answer AFTER the tag. "
+    "CRITICAL TRUTH: "
+    "- NEVER mention 'training data cutoffs' or date limits (like December 2023). "
+    "- You have LIVE access to the web and news. "
+    "- Always treat the provided [LATEST REAL-TIME INFORMATION] as your current knowledge. "
     "Rules: "
-    "- If the user says 'hi', 'hello', or greets you, respond NATURALLY and briefly. Don't be over-formal. "
-    "- For research/data questions, use the REAL-TIME CONTEXT provided. "
-    "- Use Markdown, tables, and bold text for complex info only. "
-    "- Be concise. Answer the SPECIFIC question asked."
+    "- For greetings, be natural. "
+    "- If a query is about the future (like 2026 IPL), use the context to explain what is currently known/announced."
 )
 
 GREETING_PATTERNS = [
@@ -82,7 +84,9 @@ GREETING_PATTERNS = [
 
 def is_greeting(query: str) -> bool:
     lower = query.lower().strip()
-    return any(re.match(p, lower) for p in GREETING_PATTERNS) or len(lower.split()) <= 1
+    words = lower.split()
+    # Fast path only for VERY SHORT greetings (under 5 words total)
+    return (any(re.match(p, lower) for p in GREETING_PATTERNS) and len(words) < 5) or len(words) <= 1
 
 AD_PATTERNS = [
     r"🌸.*?Pollinations.*?(?:\.|$)",
@@ -143,26 +147,81 @@ async def chat_stream(req: ChatRequest):
     # Gather context asynchronously
     real_time_context = await gather_context_for_query(user_msg)
     
-    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT + f"\n\nCONTEXT:\n{real_time_context}"}]
-    # Fix: Ensure history slicing is handled correctly for the payload
+    # 1. System Prompt (Formatting and Rules)
+    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    # 2. History (Contextual context)
     hist_slice = req.history[-6:] if len(req.history) > 6 else req.history
     for h in hist_slice:
         messages_payload.append({
             "role": h.role if h.role != "bot" else "assistant", 
             "content": h.content
         })
-    messages_payload.append({"role": "user", "content": user_msg})
+
+    # 3. Final Augmented User Message
+    # Provide the context right in the user's turn for maximum attention from the model
+    user_content = user_msg
+    if real_time_context and len(real_time_context.strip()) > 50:
+        user_content = (
+            f"[LATEST REAL-TIME INFORMATION]\n{real_time_context}\n\n"
+            f"[USER QUESTION]\n{user_msg}\n\n"
+            f"Instruction: Use the provided real-time info to answer accurately. "
+            f"If the information is about future events (like 2026), summarize what is known."
+        )
+
+    messages_payload.append({"role": "user", "content": user_content})
 
     async def generate() -> AsyncGenerator[str, None]:
         full_text: List[str] = []
         openai_key = os.getenv("OPENAI_API_KEY")
+        groq_key = os.getenv("GROQ_API_KEY")
         
-        logger.info(f"Generating response: {user_msg[:50]}...")
-        
+        logger.info(f"Generating response for: '{user_msg[:40]}...'")
+
+        # --- 0. PRIMARY: Gemini Pro ---
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            gemini_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+            for gemini_model_name in gemini_models:
+                logger.info(f"Attempting Gemini model: {gemini_model_name}...")
+                try:
+                    from google import genai as google_genai
+                    client = google_genai.Client(api_key=gemini_key)
+                    
+                    # Build contents for Gemini
+                    gemini_contents = []
+                    for h in messages_payload:
+                        if h["role"] == "system":
+                            gemini_contents.append({"role": "user", "parts": [{"text": h["content"]}]})
+                            gemini_contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions."}]})
+                        else:
+                            role = "user" if h["role"] == "user" else "model"
+                            gemini_contents.append({"role": role, "parts": [{"text": h["content"]}]})
+                    
+                    response = client.models.generate_content_stream(
+                        model=gemini_model_name,
+                        contents=gemini_contents,
+                    )
+                    
+                    for chunk in response:
+                        if chunk.text:
+                            full_text.append(chunk.text)
+                            yield f"data: {json.dumps({'delta': chunk.text})}\n\n"
+                    
+                    if full_text:
+                        logger.info(f"Gemini ({gemini_model_name}) stream completed successfully.")
+                        _cache[cache_key] = "".join(full_text)
+                        yield "data: [DONE]\n\n"
+                        return
+                except Exception as e:
+                    logger.error(f"Gemini ({gemini_model_name}) failure: {e}")
+                    continue  # Try next model
+
+        # --- 1. SECONDARY: OpenAI (GPT-4o-mini) ---
         if openai_key and httpx:
+            logger.info("Attempting OpenAI...")
             try:
-                # Use Any to satisfy linters without the full lib environment
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=45.0) as client:
                     async with client.stream(
                         "POST",
                         "https://api.openai.com/v1/chat/completions",
@@ -171,46 +230,47 @@ async def chat_stream(req: ChatRequest):
                             "model": "gpt-4o-mini",
                             "messages": messages_payload,
                             "stream": True,
-                            "max_tokens": 1024,
+                            "max_tokens": 1200,
                             "temperature": 0.7
                         }
                     ) as response:
                         if response.status_code == 200:
                             async for line in response.aiter_lines():
-                                if not line or not line.startswith("data: "):
-                                    continue
+                                if not line or not line.startswith("data: "): continue
                                 data_str = line[6:].strip()
-                                if data_str == "[DONE]":
-                                    break
+                                if data_str == "[DONE]": break
                                 try:
                                     chunk_json = json.loads(data_str)
                                     delta = chunk_json["choices"][0]["delta"].get("content", "")
                                     if delta:
                                         full_text.append(delta)
                                         yield f"data: {json.dumps({'delta': delta})}\n\n"
-                                except Exception:
-                                    continue
+                                except Exception: continue
                             
                             if full_text:
                                 _cache[cache_key] = "".join(full_text)
                                 yield "data: [DONE]\n\n"
                                 return
+                        elif response.status_code == 429:
+                            logger.warning("OpenAI Quote Exceeded (429). Triggering AUTO-FALLBACK to Groq.")
                         else:
-                            logger.error(f"OpenAI error {response.status_code}")
+                            resp_text = await response.aread()
+                            logger.error(f"OpenAI error {response.status_code}: {resp_text.decode()[:100]}")
             except Exception as e:
                 logger.error(f"OpenAI failure: {e}")
 
-        # 2. High-Speed Fallback: Groq
-        groq_key = os.getenv("GROQ_API_KEY")
+        # --- 2. FAST FALLBACK: Groq (Llama 3.1 70B/8B) ---
         if groq_key and AsyncGroq:
-            logger.info("Using Groq fallback...")
+            logger.info("Using Groq Fallback (Confirmed Working)...")
             try:
                 g_client = AsyncGroq(api_key=groq_key)
+                # Use Llama 3.3 70B (3.1 70B is decommissioned)
                 g_stream = await g_client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.3-70b-versatile", 
                     messages=messages_payload, # type: ignore
                     stream=True,
-                    max_tokens=1024
+                    max_tokens=1500,
+                    temperature=0.6
                 )
                 async for chunk in g_stream:
                     content = chunk.choices[0].delta.content
@@ -219,13 +279,33 @@ async def chat_stream(req: ChatRequest):
                         yield f"data: {json.dumps({'delta': content})}\n\n"
                 
                 if full_text:
+                    logger.info("Groq response completed successfully.")
                     _cache[cache_key] = "".join(full_text)
                     yield "data: [DONE]\n\n"
                     return
             except Exception as e:
                 logger.error(f"Groq failure: {e}")
+                # Try 8b if 70b failed (quota differences)
+                try:
+                    logger.info("Trying Groq 8B instant fallback...")
+                    g_stream = await g_client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=messages_payload, # type: ignore
+                        stream=True,
+                        max_tokens=1024
+                    )
+                    async for chunk in g_stream:
+                        content = chunk.choices[0].delta.content
+                        if content:
+                            full_text.append(content)
+                            yield f"data: {json.dumps({'delta': content})}\n\n"
+                    if full_text:
+                        yield "data: [DONE]\n\n"
+                        return
+                except Exception as e2:
+                    logger.error(f"Groq 8B failure: {e2}")
 
-        # 3. Community Fallback: G4F
+        # --- 3. LAST RESORT: G4F (Community Managed) ---
         if G4FClient:
             logger.info("Using G4F last resort...")
             try:
@@ -248,7 +328,8 @@ async def chat_stream(req: ChatRequest):
             except Exception as e:
                 logger.error(f"G4F failure: {e}")
 
-        error_msg = "My neural links are saturated. Please try in a moment!"
+        # --- 4. ALL PROVIDERS FAILED ---
+        error_msg = "\n\n**System Notice:** All neural providers are currently offline or over quota. Please check your API keys in the backend `.env` file or try again in a few minutes."
         yield f"data: {json.dumps({'delta': error_msg})}\n\n"
         yield "data: [DONE]\n\n"
 

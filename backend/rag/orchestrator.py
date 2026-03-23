@@ -62,6 +62,7 @@ SEARCH_KEYWORDS = [
     "who", "what", "where", "when", "why", "how", "tell", "show", "search", 
     "latest", "news", "current", "price", "vs", "difference", "compare",
     "stock", "market", "happened", "event", "update", "score", "match",
+    "winner", "host", "schedule", "player", "squad", "team", "stats", "rank",
 ]
 
 GREETING_PATTERNS = [
@@ -81,38 +82,49 @@ async def gather_context_for_query(query: str) -> str:
         if any(k in lower for k in SEARCH_KEYWORDS) or len(lower.split()) > 3:
             needs_search = True
 
-    # Define tasks with explicit names to help linter
-    weather_task: Coroutine[Any, Any, Optional[str]]
+    # Run tasks
+    # 1. Weather (as is)
     if any(k in lower for k in WEATHER_KEYWORDS):
         weather_task = get_weather_async(extract_location(query))
     else:
         async def _none() -> Optional[str]: return None
         weather_task = _none()
 
+    # 2. Vector DB (Local News + History)
     async def _vector_task() -> Optional[str]:
         if not needs_search: return None
         try:
-            # Move synchronous search to thread to prevent blocking the event loop
             def sync_search():
-                res = db_instance.search(query, k=2)
+                # Search local vector DB (which has daily news)
+                res = db_instance.search(query, k=4)
                 return "\n".join([f"- {d.page_content}" for d in res])
             return await asyncio.to_thread(sync_search)
-        except Exception:
-            return None
+        except Exception: return None
 
+    # 3. Web Search (Direct + Expanded)
     async def _web_task() -> Optional[str]:
         if not needs_search: return None
         try:
-            # Set a strict timeout for web search to prevent long hangs
-            return await asyncio.wait_for(
-                asyncio.to_thread(get_web_search_results, query, 3),
-                timeout=3.5
-            )
-        except (asyncio.TimeoutError, Exception):
-            logger.warning(f"Web search timed out or failed for: {query}")
+            # Query Expansion Logic
+            search_queries = [query]
+            if any(k in lower for k in ["news", "latest", "ipl", "winner", "update", "stock"]):
+                search_queries.append(f"{query} latest news updates {datetime.now().year}")
+            
+            all_res = []
+            for q in search_queries[:2]: # Max 2 queries to avoid lag
+                logger.info(f"Triggering web search for: '{q}'")
+                res = await asyncio.wait_for(
+                    asyncio.to_thread(get_web_search_results, q, 4),
+                    timeout=5.0
+                )
+                if res: all_res.append(res)
+            
+            return "\n\n".join(all_res) if all_res else None
+        except Exception as e:
+            logger.warning(f"Web search failed: {e}")
             return None
 
-    # Run all three tasks
+    # Run everything
     results = await asyncio.gather(weather_task, _vector_task(), _web_task())
     weather_res, vector_res, search_res = results
     

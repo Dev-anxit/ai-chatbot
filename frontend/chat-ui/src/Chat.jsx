@@ -20,6 +20,23 @@ import {
 import { auth, db } from "./firebase";
 import "./App.css";
 
+// ── helpers ──────────────────────────────────────────────
+function groupSessionsByDate(sessions) {
+  const now = new Date();
+  const todayStart    = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterdayStart= new Date(todayStart - 86400000);
+  const weekStart     = new Date(todayStart - 6 * 86400000);
+  const groups = { Today: [], Yesterday: [], "This Week": [], Older: [] };
+  sessions.forEach(s => {
+    const d = new Date(s.updatedAt);
+    if (d >= todayStart)         groups.Today.push(s);
+    else if (d >= yesterdayStart) groups.Yesterday.push(s);
+    else if (d >= weekStart)      groups["This Week"].push(s);
+    else                          groups.Older.push(s);
+  });
+  return groups;
+}
+
 const SESSIONS_KEY = "ehan_ai_sessions";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -146,6 +163,7 @@ export default function Chat() {
   const [isListening, setIsListening]     = useState(false);
   const [speakingId, setSpeakingId]       = useState(null);
   const [sidebarOpen, setSidebarOpen]     = useState(false); // for mobile
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // desktop collapse
   const [user, setUser]                   = useState(null);
   const [showAuth, setShowAuth]           = useState(false);
   const [activeMenuId, setActiveMenuId]   = useState(null);
@@ -156,6 +174,9 @@ export default function Chat() {
   const [showSearch, setShowSearch]       = useState(false);
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const [persona, setPersona]             = useState("Ehan AI");
+  const [renamingId, setRenamingId]       = useState(null);
+  const [renameValue, setRenameValue]     = useState("");
+  const [sendFlash, setSendFlash]         = useState(false);
 
   const toggleThought = (msgId) => {
     setExpandedThoughts(prev => ({ ...prev, [msgId]: !prev[msgId] }));
@@ -331,23 +352,31 @@ export default function Chat() {
     setActiveMenuId(activeMenuId === id ? null : id);
   };
 
-  const renameSession = async (e, id) => {
+  const renameSession = (e, id) => {
     e.stopPropagation();
-    const newTitle = prompt("Enter new title:");
-    if (newTitle && newTitle.trim()) {
+    const session = sessions.find(s => s.id === id);
+    setRenameValue(session?.title || "");
+    setRenamingId(id);
+    setActiveMenuId(null);
+  };
+
+  const commitRename = async (id) => {
+    const trimmed = renameValue.trim();
+    if (trimmed) {
       if (user) {
         try {
-          await setDoc(doc(db, "sessions", id), { title: newTitle.trim() }, { merge: true });
+          await setDoc(doc(db, "sessions", id), { title: trimmed }, { merge: true });
         } catch (err) {
           console.error("Error renaming in Firestore:", err);
         }
       } else {
         setSessions(prev =>
-          prev.map(s => s.id === id ? { ...s, title: newTitle.trim() } : s)
+          prev.map(s => s.id === id ? { ...s, title: trimmed } : s)
         );
       }
     }
-    setActiveMenuId(null);
+    setRenamingId(null);
+    setRenameValue("");
   };
 
   const handleShare = (e, id) => {
@@ -421,6 +450,10 @@ export default function Chat() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         textareaRef.current?.focus();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
       }
     };
     window.addEventListener("keydown", handler);
@@ -517,7 +550,12 @@ export default function Chat() {
     streamingIdRef.current = null;
   }, [isStreaming, messages]);
 
-  const handleSend = () => sendMessage(input);
+  const handleSend = () => {
+    if (!input.trim() || isStreaming) return;
+    setSendFlash(true);
+    setTimeout(() => setSendFlash(false), 600);
+    sendMessage(input);
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -595,29 +633,116 @@ export default function Chat() {
     });
   };
 
-  const exportChat = () => {
-    const text = messages
-      .map((m) => `[${formatTime(m.time)}] ${m.role === "user" ? "You" : "Ehan AI"}: ${m.text}`)
-      .join("\n\n");
-    const blob = new Blob([text], { type: "text/plain" });
+  const exportChat = (format = "md") => {
+    const date = new Date().toISOString().slice(0, 10);
+    let content, mime, ext;
+    if (format === "md") {
+      const lines = [`# Ehan AI Chat Export — ${date}\n`];
+      messages.forEach(m => {
+        const who = m.role === "user" ? "**You**" : `**${persona}**`;
+        lines.push(`### ${who} _(${formatTime(m.time)})_\n\n${m.text}\n`);
+      });
+      content = lines.join("\n---\n\n");
+      mime = "text/markdown";
+      ext  = "md";
+    } else {
+      content = messages
+        .map(m => `[${formatTime(m.time)}] ${m.role === "user" ? "You" : persona}: ${m.text}`)
+        .join("\n\n");
+      mime = "text/plain";
+      ext  = "txt";
+    }
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ehan-ai-chat-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `ehan-ai-chat-${date}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
   const isLastBotMessage = (m, i) =>
     m.role === "bot" && i === messages.length - 1;
 
-  const wordCount = input.trim() ? input.trim().split(/\s+/).length : 0;
+  const wordCount  = input.trim() ? input.trim().split(/\s+/).length : 0;
+  const tokenEst   = Math.ceil(input.length / 4); // rough GPT token estimate
+
+  const renderHistoryItem = (s) => (
+    <div key={s.id} className={`history-item-wrap ${currentSessionId === s.id ? 'active' : ''}`}>
+      {renamingId === s.id ? (
+        <div className="rename-inline" onClick={e => e.stopPropagation()}>
+          <input
+            className="rename-input"
+            value={renameValue}
+            autoFocus
+            onChange={e => setRenameValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename(s.id);
+              if (e.key === 'Escape') { setRenamingId(null); setRenameValue(''); }
+            }}
+          />
+          <button className="rename-ok" onClick={() => commitRename(s.id)} title="Save">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+          <button className="rename-cancel" onClick={() => { setRenamingId(null); setRenameValue(''); }} title="Cancel">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+      ) : (
+        <button className="history-item" onClick={() => selectSession(s.id)}>
+          {s.title}
+        </button>
+      )}
+      {renamingId !== s.id && (
+        <div className="history-actions-group">
+          <button className="history-menu-trigger" onClick={(e) => toggleMenu(e, s.id)} title="More options">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 13a1 1 0 100-2 1 1 0 000 2zM19 13a1 1 0 100-2 1 1 0 000 2zM5 13a1 1 0 100-2 1 1 0 000 2z" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round"/></svg>
+          </button>
+          {activeMenuId === s.id && (
+            <div className="history-context-menu" onClick={(e) => e.stopPropagation()}>
+              <button className="menu-opt" onClick={(e) => handleShare(e, s.id)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg> Share
+              </button>
+              <button className="menu-opt" onClick={(e) => renameSession(e, s.id)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Rename
+              </button>
+              <button className="menu-opt" onClick={(e) => handlePin(e, s.id)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" strokeLinejoin="round"/></svg> Pin
+              </button>
+              <button className="menu-opt" onClick={(e) => handleArchive(e, s.id)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 8v13a2 2 0 01-2 2H5a2 2 0 01-2-2V8M1 3h22v5H1V3zM10 12h4"/></svg> Archive
+              </button>
+              <div className="menu-divider" />
+              <button className="menu-opt delete" onClick={(e) => deleteSession(e, s.id)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> Delete
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="app-layout">
       <NeuralBackground />
 
-      <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+      {/* Sidebar collapse toggle button (desktop) */}
+      <button
+        className="sidebar-collapse-btn"
+        onClick={() => setSidebarCollapsed(p => !p)}
+        title={sidebarCollapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          {sidebarCollapsed
+            ? <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            : <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+        </svg>
+      </button>
+
+      <div className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-top">
           <div className="sidebar-logo">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -677,48 +802,24 @@ export default function Chat() {
           <div className="history-title">{searchTerm ? "Search Results" : "Recent Chats"}</div>
           {user ? (
             <>
-              {getFilteredSessions().length === 0 && (
-                <div className="history-empty">{searchTerm ? "No results found" : "No conversations yet"}</div>
-              )}
-              {getFilteredSessions().map(s => (
-                <div key={s.id} className={`history-item-wrap ${currentSessionId === s.id ? 'active' : ''}`}>
-                  <button className="history-item" onClick={() => selectSession(s.id)}>
-                    {s.title}
-                  </button>
-                  <div className="history-actions-group">
-                    <button className="history-menu-trigger" onClick={(e) => toggleMenu(e, s.id)} title="More options">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 13a1 1 0 100-2 1 1 0 000 2zM19 13a1 1 0 100-2 1 1 0 000 2zM5 13a1 1 0 100-2 1 1 0 000 2z" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round"/></svg>
-                    </button>
-                    
-                    {activeMenuId === s.id && (
-                      <div className="history-context-menu" onClick={(e) => e.stopPropagation()}>
-                        <button className="menu-opt" onClick={(e) => handleShare(e, s.id)}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg> Share
-                        </button>
-                        <button className="menu-opt" onClick={(e) => alert("Group chat coming soon!")}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M8 7a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6"/></svg> Start a group chat
-                        </button>
-                        <button className="menu-opt" onClick={(e) => renameSession(e, s.id)}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Rename
-                        </button>
-                        <button className="menu-opt" onClick={(e) => alert("Projects coming soon!")}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v11z"/></svg> Move to project
-                        </button>
-                        <div className="menu-divider" />
-                        <button className="menu-opt" onClick={(e) => handlePin(e, s.id)}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg> Pin chat
-                        </button>
-                        <button className="menu-opt" onClick={(e) => handleArchive(e, s.id)}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 8v13a2 2 0 01-2 2H5a2 2 0 01-2-2V8M1 3h22v5H1V3zM10 12h4"/></svg> Archive
-                        </button>
-                        <button className="menu-opt delete" onClick={(e) => deleteSession(e, s.id)}>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+              {(() => {
+                const filtered = getFilteredSessions();
+                if (filtered.length === 0) return (
+                  <div className="history-empty">{searchTerm ? "No results found" : "No conversations yet"}</div>
+                );
+                if (searchTerm) {
+                  return filtered.map(s => renderHistoryItem(s));
+                }
+                const groups = groupSessionsByDate(filtered);
+                return Object.entries(groups).map(([label, items]) =>
+                  items.length === 0 ? null : (
+                    <div key={label} className="history-group">
+                      <div className="history-group-label">{label}</div>
+                      {items.map(s => renderHistoryItem(s))}
+                    </div>
+                  )
+                );
+              })()}
             </>
           ) : (
             <div className="history-login-prompt">
@@ -786,11 +887,23 @@ export default function Chat() {
             <div className="header-actions">
               {messages.length > 0 && (
                 <>
-                  <button className="export-btn" onClick={exportChat} title="Export chat">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
+                  <div className="export-wrap" style={{ position: 'relative' }}>
+                    <button
+                      className="export-btn"
+                      onClick={() => setShowExportMenu(p => !p)}
+                      title="Export chat"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                    {showExportMenu && (
+                      <div className="export-dropdown" onMouseLeave={() => setShowExportMenu(false)}>
+                        <button onClick={() => { exportChat("md"); setShowExportMenu(false); }}>📝 Markdown (.md)</button>
+                        <button onClick={() => { exportChat("txt"); setShowExportMenu(false); }}>📄 Plain Text (.txt)</button>
+                      </div>
+                    )}
+                  </div>
                   <button className="clear-btn" onClick={() => setShowClearModal(true)} title="Delete chat">Delete</button>
                 </>
               )}
@@ -895,7 +1008,7 @@ export default function Chat() {
                                   remarkPlugins={[remarkGfm]} 
                                   components={mdComponents}
                                 >
-                                  {answer}
+                                  {m.streaming ? answer + "▋" : answer}
                                 </ReactMarkdown>
                               )}
                             </>
@@ -1037,7 +1150,7 @@ export default function Chat() {
                 </button>
               )}
               {input.length > 0 && (
-                <span className="char-count">{wordCount}w</span>
+                <span className="char-count">{wordCount}w · ~{tokenEst}t</span>
               )}
               {isStreaming ? (
                 <button className="stop-btn" onClick={stopGeneration} title="Stop generating">
@@ -1047,7 +1160,7 @@ export default function Chat() {
                 </button>
               ) : (
                 <button
-                  className={`send-btn${!input.trim() || loading ? " send-disabled" : ""}`}
+                  className={`send-btn${!input.trim() || loading ? " send-disabled" : ""}${sendFlash ? " flash" : ""}`}
                   onClick={handleSend}
                   disabled={!input.trim() || loading}
                   aria-label="Send message"
@@ -1059,7 +1172,7 @@ export default function Chat() {
                 </button>
               )}
             </div>
-            <p className="input-hint">Enter to send · Shift+Enter for new line · ⌘K to focus</p>
+            <p className="input-hint">Enter to send · Shift+Enter for new line · ⌘K focus · ⌘B sidebar</p>
           </div>
         </div>
       </div>
