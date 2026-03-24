@@ -291,6 +291,325 @@ async function gatherContext(query) {
   return all;
 }
 
+// ─────────────────────────────────────────────────────
+//  PROVIDER 1: Google Gemini (REST API — no SDK needed)
+// ─────────────────────────────────────────────────────
+async function tryGemini(messagesPayload) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
+
+  for (const model of models) {
+    try {
+      // Convert OpenAI-style messages to Gemini format
+      const contents = [];
+      let systemInstruction = "";
+
+      for (const msg of messagesPayload) {
+        if (msg.role === "system") {
+          systemInstruction = msg.content;
+        } else {
+          contents.push({
+            role: msg.role === "assistant" ? "model" : "user",
+            parts: [{ text: msg.content }],
+          });
+        }
+      }
+
+      // Prepend system as user+model pair if present
+      if (systemInstruction) {
+        contents.unshift(
+          { role: "user", parts: [{ text: systemInstruction }] },
+          { role: "model", parts: [{ text: "Understood. I will follow these instructions." }] }
+        );
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents,
+          generationConfig: {
+            maxOutputTokens: 2000,
+            temperature: 0.7,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        console.error(`Gemini ${model} error: ${res.status}`);
+        continue;
+      }
+
+      // Return the raw streaming response, we'll parse it in the handler
+      return { response: res, provider: `gemini-${model}` };
+    } catch (err) {
+      console.error(`Gemini ${model} exception:`, err);
+      continue;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────
+//  PROVIDER 2: Groq (OpenAI-compatible REST API)
+// ─────────────────────────────────────────────────────
+async function tryGroq(messagesPayload) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+
+  const models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+
+  for (const model of models) {
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: messagesPayload,
+          stream: true,
+          max_tokens: 1500,
+          temperature: 0.6,
+        }),
+      });
+
+      if (!res.ok) {
+        console.error(`Groq ${model} error: ${res.status}`);
+        continue;
+      }
+
+      return { response: res, provider: `groq-${model}`, type: "openai-sse" };
+    } catch (err) {
+      console.error(`Groq ${model} exception:`, err);
+      continue;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────
+//  PROVIDER 3: Pollinations (free, community — last resort)
+// ─────────────────────────────────────────────────────
+async function tryPollinations(messagesPayload) {
+  const endpoints = [
+    { model: "openai", stream: true },
+    { model: "mistral", stream: true },
+    { model: "openai", stream: false },
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const res = await fetch(
+        "https://text.pollinations.ai/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: ep.model,
+            messages: messagesPayload,
+            stream: ep.stream,
+          }),
+        }
+      );
+      if (!res.ok || !res.body) continue;
+
+      if (!ep.stream) {
+        // Non-streaming: read full response
+        const data = await res.json();
+        let reply = data?.choices?.[0]?.message?.content || "";
+        reply = stripAds(reply);
+        if (!reply) continue;
+        return { text: reply, provider: `pollinations-${ep.model}` };
+      }
+
+      // Streaming: read all then buffer (Pollinations streams are unreliable for pass-through)
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(payload);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) accumulated += delta;
+          } catch {}
+        }
+      }
+
+      if (!accumulated) continue;
+      const cleanText = stripAds(accumulated);
+      if (!cleanText) continue;
+      return { text: cleanText, provider: `pollinations-${ep.model}` };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────
+//  Helper: Create SSE stream from text
+// ─────────────────────────────────────────────────────
+function textToSSEResponse(text) {
+  const encoder = new TextEncoder();
+  const words = text.split(" ");
+  const chunks = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i] + (i < words.length - 1 ? " " : "");
+    chunks.push(`data: ${JSON.stringify({ delta: w })}\n\n`);
+  }
+  chunks.push("data: [DONE]\n\n");
+  return new Response(encoder.encode(chunks.join("")), {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+// ─────────────────────────────────────────────────────
+//  Helper: Stream Gemini SSE → our SSE format
+// ─────────────────────────────────────────────────────
+function streamGeminiResponse(upstreamResponse) {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = upstreamResponse.body.getReader();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (!payload || payload === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(payload);
+              const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (text) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`)
+                );
+              }
+            } catch {}
+          }
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      } catch (err) {
+        console.error("Gemini stream error:", err);
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ delta: "\n\n[Stream interrupted. Please retry.]" })}\n\n`)
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+// ─────────────────────────────────────────────────────
+//  Helper: Stream OpenAI-compatible SSE → our SSE format
+// ─────────────────────────────────────────────────────
+function streamOpenAIResponse(upstreamResponse) {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = upstreamResponse.body.getReader();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (payload === "[DONE]") break;
+            if (!payload) continue;
+
+            try {
+              const parsed = JSON.parse(payload);
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`)
+                );
+              }
+            } catch {}
+          }
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      } catch (err) {
+        console.error("OpenAI-compat stream error:", err);
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ delta: "\n\n[Stream interrupted. Please retry.]" })}\n\n`)
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+
+// ─────────────────────────────────────────────────────
+//  MAIN HANDLER
+// ─────────────────────────────────────────────────────
 export default async function handler(req) {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -330,6 +649,7 @@ export default async function handler(req) {
     );
   }
 
+  // Gather real-time context
   const now = new Date();
   const dateTimeInfo =
     `Current Date & Time: ${now.toISOString()}\n` +
@@ -355,99 +675,48 @@ export default async function handler(req) {
     { role: "user", content: message.trim() },
   ];
 
-  const endpoints = [
-    { model: "openai", stream: true },
-    { model: "mistral", stream: true },
-    { model: "openai", stream: false },
-  ];
+  // ─────────────────────────────────────────────────
+  //  PROVIDER CASCADE: Gemini → Groq → Pollinations
+  // ─────────────────────────────────────────────────
 
-  for (const ep of endpoints) {
-    try {
-      const upstream = await fetch(
-        "https://text.pollinations.ai/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: ep.model,
-            messages: messagesPayload,
-            stream: ep.stream,
-          }),
-        }
-      );
-      if (!upstream.ok || !upstream.body) continue;
-
-      if (!ep.stream) {
-        const data = await upstream.json();
-        let reply = data?.choices?.[0]?.message?.content || "";
-        reply = stripAds(reply);
-        if (!reply) continue;
-
-        const encoder = new TextEncoder();
-        const body = encoder.encode(
-          `data: ${JSON.stringify({ delta: reply })}\n\ndata: [DONE]\n\n`
-        );
-        return new Response(body, {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          },
-        });
-      }
-
-      const reader = upstream.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (payload === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(payload);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) accumulated += delta;
-          } catch {}
-        }
-      }
-
-      if (!accumulated) continue;
-
-      const cleanText = stripAds(accumulated);
-      if (!cleanText) continue;
-
-      const encoder = new TextEncoder();
-      const words = cleanText.split(" ");
-      const chunks = [];
-      for (let i = 0; i < words.length; i++) {
-        const w = words[i] + (i < words.length - 1 ? " " : "");
-        chunks.push(`data: ${JSON.stringify({ delta: w })}\n\n`);
-      }
-      chunks.push("data: [DONE]\n\n");
-      const body = encoder.encode(chunks.join(""));
-
-      return new Response(body, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-    } catch {
-      continue;
+  // 1. TRY GEMINI (primary — most reliable)
+  try {
+    const geminiResult = await tryGemini(messagesPayload);
+    if (geminiResult) {
+      console.log(`✅ Using provider: ${geminiResult.provider}`);
+      return streamGeminiResponse(geminiResult.response);
     }
+  } catch (err) {
+    console.error("Gemini cascade error:", err);
   }
 
-  return new Response(
-    JSON.stringify({ error: "All upstream providers failed" }),
-    { status: 502, headers: { "Content-Type": "application/json" } }
-  );
+  // 2. TRY GROQ (fast fallback)
+  try {
+    const groqResult = await tryGroq(messagesPayload);
+    if (groqResult) {
+      console.log(`✅ Using provider: ${groqResult.provider}`);
+      return streamOpenAIResponse(groqResult.response);
+    }
+  } catch (err) {
+    console.error("Groq cascade error:", err);
+  }
+
+  // 3. TRY POLLINATIONS (last resort — free but unreliable)
+  try {
+    const pollinationsResult = await tryPollinations(messagesPayload);
+    if (pollinationsResult) {
+      console.log(`✅ Using provider: ${pollinationsResult.provider}`);
+      return textToSSEResponse(pollinationsResult.text);
+    }
+  } catch (err) {
+    console.error("Pollinations cascade error:", err);
+  }
+
+  // 4. ALL FAILED
+  console.error("🚨 ALL PROVIDERS FAILED");
+  const errorMsg =
+    "I'm sorry, all AI providers are currently unavailable. " +
+    "This could be due to temporary service outages or API quota limits. " +
+    "Please try again in a few minutes.";
+  return textToSSEResponse(errorMsg);
 }
