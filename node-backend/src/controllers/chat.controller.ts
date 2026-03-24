@@ -17,7 +17,7 @@ export const streamChat = async (req: Request, res: Response) => {
 
   try {
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-flash-latest", // Switching to Flash to ensure stable quota availability
+      model: "gemini-2.0-flash", // Using current stable model (gemini-flash-latest is deprecated)
       safetySettings: [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }
       ]
