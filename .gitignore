@@ -1,25 +1,44 @@
 # Python
-.venv/
 venv/
-venv_new/
+venv_*/
+.venv/
 backend/venv/
-backend/venv_new/
-backend/venv_312/
-venv_312/
+backend/venv_*/
 backend/__pycache__/
 **/__pycache__/
 *.pyc
 
-# Build
+# Build outputs
 frontend/chat-ui/dist/
+next-client/.next/
+next-client/out/
+node-backend/dist/
 
-# Secrets
-backend/.env
+# Secrets — NEVER commit API keys
 .env
+.env.local
+.env.production
+backend/.env
+node-backend/.env
+frontend/chat-ui/.env
+next-client/.env
+next-client/.env.local
 firebase-admin.json
 
 # Node
 node_modules/
 
+# vector DB files (large binary)
+backend/rag/faiss_index/
+
+# AI/IDE
+.vscode/
+.idea/
+
 # OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+backend/server.log

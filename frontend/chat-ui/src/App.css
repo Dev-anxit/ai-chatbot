@@ -558,9 +558,9 @@
   display: flex;
   align-items: flex-end;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;          /* slightly more vertical breathing room */
   opacity: 0;
-  animation: messageSlideIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: msgFadeIn 0.35s ease-out forwards;
 }
 
 .msg-row.user {
@@ -571,9 +571,10 @@
   justify-content: flex-start;
 }
 
-@keyframes messageSlideIn {
-  from { opacity: 0; transform: translateY(15px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+/* Smooth, subtle fade-in (no jitter from scale) */
+@keyframes msgFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 
@@ -593,7 +594,7 @@
 
 /* ---------- Message Bubbles ---------- */
 .msg-bubble {
-  padding: 11px 15px;
+  padding: 12px 16px;           /* slightly more generous padding */
   border-radius: 18px;
 }
 
@@ -603,14 +604,16 @@
   border: 1px solid rgba(0, 140, 255, 0.35);
   box-shadow: 0 4px 20px rgba(0, 100, 255, 0.22);
   width: fit-content;
+  max-width: 72%;               /* prevent user bubbles from stretching too wide */
   min-width: 48px;
 }
 
 .msg-bubble.bot {
   background: rgba(255, 255, 255, 0.055);
   border-radius: 18px 18px 18px 4px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.22);
+  max-width: 80%;               /* cap bot bubbles too */
 }
 
 .msg-bubble.bot.error {
@@ -640,24 +643,26 @@
 .typing-dot-wrap {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 0;
+  gap: 6px;
+  padding: 4px 2px;
 }
 
 .typing-dot-wrap span {
   width: 7px;
   height: 7px;
-  background: rgba(0, 212, 255, 0.7);
+  background: rgba(0, 212, 255, 0.75);
   border-radius: 50%;
-  animation: typingBounce 1.3s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.5); /* subtle glow on each dot */
+  animation: typingWave 1.2s ease-in-out infinite;
 }
 
-.typing-dot-wrap span:nth-child(2) { animation-delay: 0.18s; }
-.typing-dot-wrap span:nth-child(3) { animation-delay: 0.36s; }
+.typing-dot-wrap span:nth-child(1) { animation-delay: 0s;    }
+.typing-dot-wrap span:nth-child(2) { animation-delay: 0.2s;  }
+.typing-dot-wrap span:nth-child(3) { animation-delay: 0.4s;  }
 
-@keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0);   opacity: 0.35; }
-  30%            { transform: translateY(-9px); opacity: 1; }
+@keyframes typingWave {
+  0%, 60%, 100% { transform: translateY(0);    opacity: 0.3; }
+  30%            { transform: translateY(-8px); opacity: 1;   }
 }
 
 /* ---------- Input Area ---------- */
@@ -764,10 +769,12 @@
 
 .input-shell:focus-within {
   border-color: transparent;
+  border-radius: 20px;          /* increase rounding on focus */
   box-shadow:
-    0 0 0 1px rgba(0, 212, 255, 0.15),
-    0 0 24px rgba(0, 212, 255, 0.1),
-    0 0 60px rgba(124, 58, 237, 0.06);
+    0 0 0 2px rgba(0, 212, 255, 0.22),
+    0 0 32px rgba(0, 212, 255, 0.12),
+    0 0 70px rgba(124, 58, 237, 0.08);
+  transition: border-radius 0.25s ease, box-shadow 0.3s ease;
 }
 
 .input-shell:focus-within::before {

@@ -30,29 +30,33 @@ export const useStreaming = (apiBase: string) => {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const dataStr = decoder.decode(value);
-        const lines = dataStr.split('\n\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonStr = line.replace('data: ', '');
-            if (jsonStr === '[DONE]') break;
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          const jsonStr = trimmed.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
 
-            try {
-              const { text, error: apiError } = JSON.parse(jsonStr);
-              if (apiError) throw new Error(apiError);
-              if (text) {
-                fullText += text;
-                onChunk(text);
-              }
-            } catch (e) {
-              // Ignore partial JSON chunks
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.error) throw new Error(parsed.error);
+            // Handle both 'text' (node-backend) and 'delta' (python backend) keys
+            const chunk = parsed.text || parsed.delta;
+            if (chunk) {
+              fullText += chunk;
+              onChunk(chunk);
             }
+          } catch (e) {
+            // Ignore partial JSON chunks
           }
         }
       }

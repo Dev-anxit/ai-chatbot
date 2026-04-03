@@ -14,8 +14,8 @@ export default function ChatPage() {
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   
-  // Connect to the Node/Express backend on port 5001
-  const { streamResponse, isStreaming } = useStreaming("http://localhost:5001");
+  // Connect to the Node/Express backend on port 8000
+  const { streamResponse, isStreaming } = useStreaming("http://localhost:8000");
 
   // Auto-scroll logic
   useEffect(() => {

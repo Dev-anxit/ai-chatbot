@@ -1,9 +1,9 @@
 {
   "version": 2,
   "framework": "vite",
-  "rootDirectory": "frontend/chat-ui",
-  "installCommand": "npm install",
-  "buildCommand": "npm run build",
+  "installCommand": "cd frontend/chat-ui && npm install",
+  "buildCommand": "cd frontend/chat-ui && npm run build",
+  "outputDirectory": "frontend/chat-ui/dist",
   "rewrites": [
     { "source": "/chat/:path*", "destination": "/api/chat/:path*" },
     { "source": "/((?!api|chat).*)", "destination": "/index.html" }

@@ -22,7 +22,6 @@ class VectorKnowledgeDB:
             self._initialize_empty()
 
     def _initialize_empty(self):
-        from langchain_core.documents import Document
         dummy = [Document(page_content="Genesis: Knowledge base initialized", metadata={"source": "system"})]
         self.db = FAISS.from_documents(dummy, self.embeddings)
         self.db.save_local(VECTOR_DB_PATH)

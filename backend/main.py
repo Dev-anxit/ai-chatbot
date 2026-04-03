@@ -17,13 +17,6 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Lazy imports with type safety for linters
-httpx: Any = None
-try:
-    import httpx
-except ImportError:
-    pass
-
 try:
     from groq import AsyncGroq
 except ImportError:
@@ -373,16 +366,23 @@ async def chat_stream(req: ChatRequest):
             logger.info("Using G4F last resort...")
             try:
                 g4f_client = G4FClient()
-                g4f_res = g4f_client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=messages_payload, # type: ignore
-                    stream=True
-                )
-                async for chunk in g4f_res:
-                    content = getattr(chunk.choices[0].delta, 'content', None)
-                    if content:
-                        full_text.append(content)
-                        yield f"data: {json.dumps({'delta': content})}\n\n"
+                # G4F returns a sync generator, so run in thread
+                def _g4f_sync():
+                    chunks = []
+                    for chunk in g4f_client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=messages_payload,  # type: ignore
+                        stream=True
+                    ):
+                        content = getattr(chunk.choices[0].delta, 'content', None)
+                        if content:
+                            chunks.append(content)
+                    return chunks
+
+                g4f_chunks = await asyncio.to_thread(_g4f_sync)
+                for content in g4f_chunks:
+                    full_text.append(content)
+                    yield f"data: {json.dumps({'delta': content})}\n\n"
                 
                 if full_text:
                     _cache_response(cache_key, "".join(full_text))

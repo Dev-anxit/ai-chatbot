@@ -7,30 +7,48 @@ import cors from 'cors';
 import chatRoutes from './routes/chat.routes';
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 8000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
-// Routes
-app.use('/api/chat', chatRoutes);
+// Routes - mount at BOTH paths so both frontends work
+app.use('/api/chat', chatRoutes);   // Next.js frontend: /api/chat/stream
+app.use('/chat', chatRoutes);       // Vite frontend: /chat/stream
 
 // Health Check
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'live', engine: 'Gemini Pro Node' });
+  res.json({ 
+    status: 'live', 
+    engine: 'Gemini Pro Node',
+    geminiKey: process.env.GEMINI_API_KEY ? 'configured' : 'MISSING'
+  });
 });
 
-// DB Connection (Resilient Strategy)
+app.get('/', (req: Request, res: Response) => {
+  res.json({ message: 'Ehan AI Backend is running', status: 'online' });
+});
+
+// DB Connection (Resilient - won't crash if MongoDB is unavailable)
 const mongoURI = process.env.MONGODB_URI;
 
-if (mongoURI && mongoURI.length > 5) {
+if (mongoURI && mongoURI.length > 10 && !mongoURI.includes('localhost')) {
   mongoose
     .connect(mongoURI)
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
-    .catch((err) => console.error('❌ MongoDB Connection Error:', err));
+    .catch((err) => console.error('❌ MongoDB Connection Error (non-fatal):', err.message));
 } else {
-  console.warn('⚠️  MONGODB_URI not provided. Chat history will not be persisted.');
+  console.warn('⚠️  MongoDB not configured or using localhost. Chat history will not be persisted.');
 }
 
-app.listen(PORT, () => console.log(`🚀 Node Nexus Server Spinning on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`\n🚀 Ehan AI Server running on http://localhost:${PORT}`);
+  console.log(`   - Vite frontend endpoint:   POST /chat/stream`);
+  console.log(`   - Next.js frontend endpoint: POST /api/chat/stream`);
+  console.log(`   - Health check:             GET /health\n`);
+});

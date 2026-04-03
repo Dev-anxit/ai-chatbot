@@ -1,4 +1,5 @@
 services:
+  # Option 1: Python FastAPI Backend (RAG-powered)
   - type: web
     name: ehan-ai-backend
     runtime: python
@@ -20,3 +21,22 @@ services:
         value: "3.11.0"
       - key: KEEP_ALIVE_INTERVAL
         value: "600"
+
+  # Option 2: Node.js Backend (lightweight, Gemini → Groq cascade)
+  - type: web
+    name: ehan-ai-node
+    runtime: node
+    rootDir: node-backend
+    buildCommand: "npm install && npx tsc"
+    startCommand: "node dist/index.js"
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PORT
+        value: "8000"
+      - key: NODE_ENV
+        value: "production"

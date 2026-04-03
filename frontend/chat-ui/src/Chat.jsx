@@ -140,10 +140,12 @@ function CodeBlock({ language, children }) {
 }
 
 const mdComponents = {
-  code({ inline, className, children, ...props }) {
+  code({ className, children, ...props }) {
     const lang = /language-(\w+)/.exec(className || "")?.[1];
     const code = String(children).replace(/\n$/, "");
-    if (!inline && lang) return <CodeBlock language={lang}>{code}</CodeBlock>;
+    // In react-markdown v9+, inline is not passed. Detect inline by: no language + no newlines in content
+    const isInline = !lang && !code.includes("\n");
+    if (!isInline && lang) return <CodeBlock language={lang}>{code}</CodeBlock>;
     return <code className="inline-code" {...props}>{children}</code>;
   },
 };
