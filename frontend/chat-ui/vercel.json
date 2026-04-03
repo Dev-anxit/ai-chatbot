@@ -1,5 +1,4 @@
 {
-  "framework": "vite",
   "rewrites": [
     { "source": "/chat/:path*", "destination": "/api/chat/:path*" },
     { "source": "/((?!api|chat).*)", "destination": "/index.html" }
