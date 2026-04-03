@@ -42,3 +42,4 @@ Thumbs.db
 # Logs
 *.log
 backend/server.log
+.vercel
