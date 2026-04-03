@@ -98,6 +98,10 @@ A production-ready AI chatbot with **multi-provider fallback**, real-time stream
 
 ```
 ai-chatbot/
+├── api/                       # Vercel Serverless/Edge Functions
+│   └── chat/
+│       └── stream.js          # Edge Function backend for Vite UI
+│
 ├── frontend/chat-ui/          # ⭐ Primary React + Vite frontend
 │   ├── src/
 │   │   ├── Chat.jsx           # Main chat component (1200+ LOC)
@@ -107,8 +111,6 @@ ai-chatbot/
 │   │   ├── firebase.js        # Firebase config
 │   │   ├── App.jsx            # Root with auth routing
 │   │   └── App.css            # Complete design system
-│   ├── api/chat/stream.js     # Vercel Edge Function (serverless backend)
-│   ├── vercel.json            # Vercel routing config
 │   └── .env.example           # Environment template
 │
 ├── next-client/               # Alternative Next.js frontend
@@ -214,7 +216,7 @@ uvicorn main:app --reload --port 8000
 
 | Variable | Value |
 |----------|-------|
-| `VITE_API_BASE` | Your backend URL (e.g. `https://ehan-ai-backend.onrender.com`) |
+| `VITE_API_BASE` | Leave blank to use Vercel Edge Function, or set backend URL (e.g. `https://ehan-ai-backend.onrender.com`) |
 | `GEMINI_API_KEY` | Your Gemini key (for the Edge Function) |
 | `GROQ_API_KEY` | Your Groq key (for the Edge Function) |
 | `VITE_FIREBASE_*` | Firebase config values (for auth) |
